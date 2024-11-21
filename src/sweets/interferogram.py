@@ -199,18 +199,6 @@ def main():
     parser.add_argument(
         "--overwrite", action="store_true", help="Overwrite existing output."
     )
-    parser.add_argument(
-        "--bbox",
-        type=float,
-        nargs=4,
-        metavar=("lon_min", "lat_min", "lon_max", "lat_max"),
-        help="Optional bounding box for cropping.",
-    )
-    parser.add_argument(
-        "--overlapping_with",
-        type=Path,
-        help="File path to use for overlapping bounds cropping.",
-    )
 
     args = parser.parse_args()
     if not args.outfile:
@@ -223,8 +211,6 @@ def main():
         dset=args.dset,
         looks=tuple(args.looks),
         overwrite=args.overwrite,
-        bbox=tuple(args.bbox) if args.bbox else None,
-        overlapping_with=args.overlapping_with,
     )
 
 

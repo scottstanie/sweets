@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pydantic import BaseModel
+
 from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor, wait
 from functools import partial
 from pathlib import Path
@@ -24,11 +26,40 @@ from ._orbit import download_orbits
 from ._types import Filename
 from .dem import create_dem, create_water_mask
 from .download import ASFQuery
-from .interferogram import InterferogramOptions, create_cor, create_ifg
+from .interferogram import create_cor, create_interferogram
 
 logger = get_log(__name__)
 
 UNW_SUFFIX = ".unw.tif"
+
+
+class InterferogramOptions(BaseModel):
+    """Options for creating interferograms in workflow."""
+
+    looks: tuple[int, int] = Field(
+        (6, 12),
+        description="Row looks, column looks. Default is 6, 12 (for 60x60 m).",
+    )
+    max_bandwidth: Optional[int] = Field(
+        4,
+        description="Form interferograms using the nearest n- dates",
+    )
+    max_temporal_baseline: Optional[float] = Field(
+        None,
+        description="Alt. to max_bandwidth: maximum temporal baseline in days.",
+    )
+
+    @model_validator(mode="after")
+    def _check_max_temporal_baseline(self):
+        """Make sure they didn't specify max_bandwidth and max_temporal_baseline."""
+        max_temporal_baseline = self.max_temporal_baseline
+        if max_temporal_baseline is not None:
+            self.max_bandwidth = None
+            # TODO :use the new field set functions for this
+            # raise ValueError(
+            #     "Cannot specify both max_bandwidth and max_temporal_baseline"
+            # )
+        return self
 
 
 class Workflow(YamlModel):
@@ -403,7 +434,7 @@ class Workflow(YamlModel):
                     for vrt_ifg in network.ifg_list:
                         outfile = vrt_ifg.path.with_suffix(".tif")
                         ifg_fut = _client.submit(
-                            create_ifg,
+                            create_interferogram,
                             vrt_ifg.ref_slc,
                             vrt_ifg.sec_slc,
                             outfile,

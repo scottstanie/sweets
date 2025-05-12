@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 def create_interferogram(
     ref_slc_file: Path | str,
     sec_slc_file: Path | str,
-    outfile: Path | str,
     *,
+    outfile: Path | str | None = None,
     dset: str | None = None,
     looks: tuple[int, int],
     overwrite: bool = False,
@@ -45,27 +45,34 @@ def create_interferogram(
     Path
         Path to Geotiff file containing the multi-looked, normalized interferogram.
     """
-    outfile = Path(outfile)
-    if outfile.exists():
+    out_path = (
+        _form_ifg_name(ref_slc_file, sec_slc_file, Path())
+        if outfile is None
+        else Path(outfile)
+    )
+
+    if out_path.exists():
         if not overwrite:
-            logger.debug(f"Skipping {outfile} because it already exists.")
-            return outfile
+            logger.debug(f"Skipping {out_path} because it already exists.")
+            return out_path
         else:
-            logger.info(f"Overwriting {outfile} because overwrite=True.")
-            outfile.unlink()
+            logger.info(f"Overwriting {out_path} because overwrite=True.")
+            out_path.unlink()
 
     gdal_ref_slc_file = io.format_nc_filename(ref_slc_file, dset)
     gdal_sec_slc_file = io.format_nc_filename(sec_slc_file, dset)
     crs = io.get_raster_crs(gdal_ref_slc_file)
     assert crs == io.get_raster_crs(gdal_sec_slc_file)
 
-    logger.info(f"Creating {looks[0]}x{looks[1]} multi-looked interferogram: {outfile}")
+    logger.info(
+        f"Creating {looks[0]}x{looks[1]} multi-looked interferogram: {out_path}"
+    )
     reader_ref = io.HDF5Reader(filename=ref_slc_file, dset_name=dset, nodata=np.nan)
     reader_sec = io.HDF5Reader(filename=sec_slc_file, dset_name=dset, nodata=np.nan)
 
     io.write_arr(
         arr=None,
-        output_name=outfile,
+        output_name=out_path,
         like_filename=gdal_ref_slc_file,
         strides={"y": looks[0], "x": looks[1]},
         nodata=0,
@@ -85,12 +92,12 @@ def create_interferogram(
         ifg = _form_ifg(arr_ref, arr_sec, looks)
         io.write_block(
             np.asarray(ifg),
-            filename=outfile,
+            filename=out_path,
             row_start=out_rows.start,
             col_start=out_cols.start,
         )
 
-    return outfile
+    return out_path
 
 
 def create_cor(ifg_filename: Path | str, outfile: Optional[Path | str] = None) -> Path:
@@ -180,39 +187,7 @@ def _form_ifg_name(
     return Path(out_dir) / ifg_name
 
 
-def main():
-    """Parse arguments and create an interferogram."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--ref-slc-file", type=Path, required=True, help="Path to reference SLC file."
-    )
-    parser.add_argument(
-        "--sec-slc-file", type=Path, required=True, help="Path to secondary SLC file."
-    )
-    parser.add_argument(
-        "--dset", help="For HDF5 SLCs, the dataset to the complex raster"
-    )
-    parser.add_argument("--outfile", type=Path, help="Output GeoTIFF file.")
-    parser.add_argument(
-        "--looks", type=int, nargs=2, default=(6, 12), help="Row and column looks."
-    )
-    parser.add_argument(
-        "--overwrite", action="store_true", help="Overwrite existing output."
-    )
-
-    args = parser.parse_args()
-    if not args.outfile:
-        args.outfile = _form_ifg_name(args.ref_slc_file, args.sec_slc_file, ".")
-        logger.debug(f"Setting outfile to {args.outfile}")
-    create_interferogram(
-        ref_slc_file=args.ref_slc_file,
-        sec_slc_file=args.sec_slc_file,
-        outfile=args.outfile,
-        dset=args.dset,
-        looks=tuple(args.looks),
-        overwrite=args.overwrite,
-    )
-
-
 if __name__ == "__main__":
-    main()
+    import tyro
+
+    tyro.cli(create_interferogram)

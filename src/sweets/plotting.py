@@ -77,7 +77,9 @@ def plot_ifg(
 
     if ax is None:
         if plot_cor:
-            fig, (ax, cor_ax) = plt.subplots(ncols=2, figsize=figsize)
+            fig, (ax, cor_ax) = plt.subplots(
+                ncols=2, figsize=figsize, sharex=True, sharey=True
+            )
         else:
             fig, ax = plt.subplots(figsize=figsize)
     else:

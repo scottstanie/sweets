@@ -13,7 +13,7 @@ from dolphin import stitching, unwrap
 from dolphin.interferogram import Network
 from dolphin.utils import set_num_threads, _format_date_pair
 from dolphin.workflows.config import YamlModel
-from opera_utils import group_by_burst, group_by_date
+from opera_utils import group_by_burst, group_by_date, get_burst_id
 from pydantic import ConfigDict, Field, field_validator, model_validator
 from shapely import geometry, wkt
 
@@ -256,12 +256,23 @@ class Workflow(YamlModel):
         ext = ".SAFE" if self.asf_query.unzip else ".zip"
         return sorted(self.asf_query.out_dir.glob("S*" + ext))
 
-    # From step 2:
+    # From step 2, or download:
     def _get_existing_gslcs(self) -> list[Path]:
-        return sorted(self.gslc_dir.glob("t*/*/t*.h5"))
+        hdf5_files: list[Path] = []
+        for f in self.gslc_dir.rglob("*.h5"):
+            if "static" in f.name.lower():
+                continue
+            try:
+                get_burst_id(f)
+            except ValueError:
+                continue
+            hdf5_files.append(f)
+        return sorted(hdf5_files)
 
     def _get_burst_static_layers(self) -> list[Path]:
-        return sorted(self.gslc_dir.glob("t*/*/static_*.h5"))
+        return sorted(
+            f for f in self.gslc_dir.rglob("*.h5") if "static" in f.name.lower()
+        )
 
     # From step 3:
     def _get_existing_burst_ifgs(self) -> list[Path]:
@@ -437,7 +448,7 @@ class Workflow(YamlModel):
                             create_interferogram,
                             vrt_ifg.ref_slc,
                             vrt_ifg.sec_slc,
-                            outfile,
+                            outfile=outfile,
                             looks=self.interferogram_options.looks,
                         )
 

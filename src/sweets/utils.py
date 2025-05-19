@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from datetime import datetime, date
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -166,3 +167,8 @@ def get_overlapping_bounds(
     b1 = geometry.box(*bbox1)
     b2 = geometry.box(*bbox2)
     return b1.intersection(b2).bounds
+
+
+def _format_dates(*dates: datetime | date, fmt: str = "%Y%m%d", sep: str = "_") -> str:
+    """Format a date pair into a string."""
+    return sep.join((d.strftime(fmt)) for d in dates)

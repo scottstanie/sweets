@@ -1,14 +1,15 @@
 #!/usr/bin/env python
 from __future__ import annotations
 
-import argparse
 import logging
+from functools import partial
+from os import fsdecode
 from pathlib import Path
 from typing import Optional
-from jax import jit, lax
+
 import jax.numpy as jnp
-from functools import partial
 import numpy as np
+from jax import jit, lax
 from dolphin import io, Strides
 from opera_utils import get_dates
 
@@ -59,16 +60,27 @@ def create_interferogram(
             logger.info(f"Overwriting {out_path} because overwrite=True.")
             out_path.unlink()
 
-    gdal_ref_slc_file = io.format_nc_filename(ref_slc_file, dset)
-    gdal_sec_slc_file = io.format_nc_filename(sec_slc_file, dset)
+    def _get_gdal_str(filename) -> str:
+        if (
+            "hdf5:" in fsdecode(filename).lower()
+            or "netcdf:" in fsdecode(filename).lower()
+        ):
+            return fsdecode(filename)
+        else:
+            return io.format_nc_filename(filename, dset)
+
+    gdal_ref_slc_file = _get_gdal_str(ref_slc_file)
+    gdal_sec_slc_file = _get_gdal_str(sec_slc_file)
     crs = io.get_raster_crs(gdal_ref_slc_file)
     assert crs == io.get_raster_crs(gdal_sec_slc_file)
 
     logger.info(
         f"Creating {looks[0]}x{looks[1]} multi-looked interferogram: {out_path}"
     )
-    reader_ref = io.HDF5Reader(filename=ref_slc_file, dset_name=dset, nodata=np.nan)
-    reader_sec = io.HDF5Reader(filename=sec_slc_file, dset_name=dset, nodata=np.nan)
+    reader_ref = io.RasterReader.from_file(gdal_ref_slc_file, nodata=np.nan)
+    reader_sec = io.RasterReader.from_file(gdal_sec_slc_file, nodata=np.nan)
+    # reader_ref = io.HDF5Reader(filename=ref_slc_file, dset_name=dset, nodata=np.nan)
+    # reader_sec = io.HDF5Reader(filename=sec_slc_file, dset_name=dset, nodata=np.nan)
 
     io.write_arr(
         arr=None,

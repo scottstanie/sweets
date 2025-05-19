@@ -70,6 +70,7 @@ def plot_ifg(
     else:
         # check for accidentally passing a filename as positional
         if isinstance(img, (Path, str)):
+            title = title or Path(img).stem
             img = io.load_gdal(img, subsample_factor=subsample_factor)
     phase = np.angle(img) if np.iscomplexobj(img) else img
     if plot_cor:
@@ -95,7 +96,7 @@ def plot_ifg(
         axim = cor_ax.imshow(cor, cmap="plasma", vmax=1, vmin=0)
         fig.colorbar(axim, ax=cor_ax)
     if title:
-        ax.set_title(title)
+        fig.suptitle(title)
     return fig, ax
 
 

@@ -179,7 +179,7 @@ class Workflow(YamlModel):
     # been passed in by a user.
     @model_validator(mode="before")
     @classmethod
-    def _check_unset_dirs(cls, values: Any) -> "Workflow":
+    def _check_unset_dirs(cls, values: Any) -> Any:
         # TODO: Use the newer checks for fields set
         if isinstance(values, dict):
             if "asf_query" not in values:
@@ -525,13 +525,14 @@ class Workflow(YamlModel):
         stitched_ifg_files = []
         for dates, cur_images in grouped_images.items():
             logger.info(f"{dates}: Stitching {len(cur_images)} images.")
-            outfile = self.stitched_ifg_dir / (_format_dates(*dates) + ".int")
+            # TODO: standardize extensions
+            outfile = self.stitched_ifg_dir / (_format_dates(*dates) + ".int.tif")
             stitched_ifg_files.append(outfile)
 
             stitching.merge_images(
                 cur_images,
                 outfile=outfile,
-                driver="ENVI",
+                driver="GTiff",
                 out_bounds=self.bbox,
                 out_bounds_epsg=4326,
                 target_aligned_pixels=True,
@@ -563,7 +564,6 @@ class Workflow(YamlModel):
                 output_file=self._warped_water_mask,
             )
 
-        # dolphin allows for parallel jobs, use PorcessPool here?
         unw_paths, _ = unwrap.run(
             ifg_files,
             cor_files,

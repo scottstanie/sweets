@@ -136,6 +136,8 @@ def create_cor(ifg_filename: Path | str, outfile: Optional[Path | str] = None) -
 
     if outfile is None:
         outfile = Path(ifg_filename).with_suffix(".cor.tif")
+    if Path(outfile).exists():
+        return Path(outfile)
     gdal_calc.Calc(
         "abs(A)",
         A=str(ifg_filename),

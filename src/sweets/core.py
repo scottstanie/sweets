@@ -338,8 +338,9 @@ class Workflow(YamlModel):
 
     # From step 4:
     def _get_existing_stitched_ifgs(self) -> tuple[list[Path], list[Path]]:
+        # TODO: the extensions should be stored somewhere
         ifg_file_list = sorted(Path(self.ifg_dir / "stitched").glob("2*.int"))
-        cor_file_list = [f.with_suffix(".cor") for f in ifg_file_list]
+        cor_file_list = [f.with_suffix(".cor.tif") for f in ifg_file_list]
         return ifg_file_list, cor_file_list
 
     # Download helpers to kick off for step 1:

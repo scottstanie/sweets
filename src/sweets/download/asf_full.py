@@ -1,23 +1,11 @@
 #!/usr/bin/env python
-"""Script for downloading through https://asf.alaska.edu/api/.
+"""ASF full download strategy using the existing ASF query logic.
 
-Base taken from
-https://github.com/scottyhq/isce_notes/blob/master/BatchProcessing.md
-https://github.com/scottstanie/apertools/blob/master/apertools/asfdownload.py
-
-
-You need a .netrc to download:
-
-# cat ~/.netrc
-machine urs.earthdata.nasa.gov
-    login CHANGE
-    password CHANGE
-
+Base taken from the original download.py module.
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import subprocess
@@ -27,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, List, Literal, Optional
 from urllib.parse import urlencode
 
 import requests
@@ -36,17 +24,20 @@ from dolphin.workflows.config import YamlModel
 from pydantic import ConfigDict, Field, PrivateAttr, field_validator, model_validator
 from shapely.geometry import box
 
-from ._log import get_log, log_runtime
-from ._types import Filename
-from ._unzip import unzip_all
+from .._log import get_log, log_runtime
+from .._types import Filename
+from .._unzip import unzip_all
+from ._strategy import DownloadStrategy
 
 logger = get_log(__name__)
 
 DIRNAME = os.path.dirname(os.path.abspath(__file__))
 
 
-class ASFQuery(YamlModel):
-    """Class holding the Sentinel-1 ASF query parameters."""
+class ASFFullDownload(DownloadStrategy, YamlModel):
+    """Download strategy for full SAFE files from ASF."""
+
+    method: Literal["full"] = "full"
 
     out_dir: Path = Field(
         Path(".") / "data",
@@ -208,7 +199,8 @@ class ASFQuery(YamlModel):
             list(executor.map(download_url, enumerate(urls)))
 
     @log_runtime
-    def download(self, log_dir: Filename = Path(".")) -> list[Path]:
+    def download(self, *, log_dir: Path) -> List[Path]:
+        """Download full SAFE files from ASF."""
         # Start by saving data available as geojson
         results = self.query_results()
         urls = self._get_urls(results)
@@ -242,67 +234,6 @@ def _query_url(url: str) -> dict:
     return results
 
 
-def cli():
-    """Run the command line interface."""
-    p = argparse.ArgumentParser()
-    p.add_argument(
-        "--out-dir",
-        "-o",
-        help="Path to directory for saving output files (default=%(default)s)",
-        default="./",
-    )
-    p.add_argument(
-        "--bbox",
-        nargs=4,
-        metavar=("left", "bottom", "right", "top"),
-        type=float,
-        help=(
-            "Bounding box of area of interest  (e.g. --bbox -106.1 30.1 -103.1 33.1 ). "
-        ),
-    )
-    p.add_argument(
-        "--wkt-file",
-        help="Filename of a WKT polygon to search within",
-    )
-    p.add_argument(
-        "--start",
-        help="Starting date for query (recommended: YYYY-MM-DD)",
-    )
-    p.add_argument(
-        "--end",
-        help="Ending date for query (recommended: YYYY-MM-DD)",
-    )
-    p.add_argument(
-        "--relativeOrbit",
-        type=int,
-        help="Limit to one path / relativeOrbit",
-    )
-    p.add_argument(
-        "--flightDirection",
-        type=str.upper,
-        help="Satellite orbit direction during acquisition",
-        choices=["A", "D", "ASCENDING", "DESCENDING"],
-    )
-    p.add_argument(
-        "--maxResults",
-        type=int,
-        default=2000,
-        help="Limit of number of products to download (default=%(default)s)",
-    )
-    p.add_argument(
-        "--query-only",
-        action="store_true",
-        help="display available data in format of --query-file, no download",
-    )
-    args = p.parse_args()
-
-    q = ASFQuery(**vars(args))
-    if args.query_only:
-        q.query_only()
-    else:
-        q.download_data()
-
-
 def _unzip_one(filepath: Filename, pol: str = "vv", out_dir=Path(".")):
     """Unzip one Sentinel-1 zip file."""
     if pol is None:
@@ -320,7 +251,3 @@ def delete_tiffs_within_zip(data_path: Filename, pol: str = "vh"):
     cmd = f"""find {data_path} -name "S*.zip" | xargs -I{{}} -n1 -P4 zip -d {{}} '*-vh-*.tiff'"""  # noqa
     logger.info(cmd)
     subprocess.run(cmd, shell=True, check=True)
-
-
-if __name__ == "__main__":
-    cli()

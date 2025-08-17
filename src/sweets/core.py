@@ -3,7 +3,7 @@ from __future__ import annotations
 from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor, wait
 from functools import partial
 from pathlib import Path
-from typing import Any, Literal, Optional, Tuple
+from typing import Any, Literal, Optional, Tuple, Union
 
 import h5py
 import numpy as np
@@ -16,6 +16,7 @@ from dolphin.workflows.config import (
 )
 from opera_utils import group_by_burst, group_by_date
 from pydantic import ConfigDict, Field, computed_field, field_validator, model_validator
+from datetime import datetime, date
 from shapely import geometry, wkt
 
 from ._burst_db import get_burst_db
@@ -26,7 +27,7 @@ from ._netrc import setup_nasa_netrc
 from ._orbit import download_orbits
 from ._types import Filename
 from .dem import create_dem, create_water_mask
-from .download import ASFQuery
+from .download import ASFFullDownload, BurstSubsetDownload
 from .interferogram import InterferogramOptions, create_cor, create_ifg
 
 logger = get_log(__name__)
@@ -58,13 +59,50 @@ class Workflow(YamlModel):
         ),
     )
 
+    # Download parameters
+    start_date: datetime = Field(..., description="Starting date for data search")
+    end_date: datetime = Field(
+        default_factory=datetime.now, description="Ending date for data search"
+    )
+    track: Optional[int] = Field(None, description="Relative orbit / track number")
+    flight_direction: Optional[Literal["ASCENDING", "DESCENDING"]] = Field(
+        None, description="Satellite flight direction"
+    )
+    data_dir: Path = Field(
+        Path("data"),
+        description="Directory for downloaded data files",
+        validate_default=True,
+    )
     orbit_dir: Path = Field(
         Path("orbits"),
         description="Directory for orbit files.",
         validate_default=True,
     )
+    unzip_data: bool = Field(
+        True, description="Whether to unzip downloaded files into .SAFE directories"
+    )
 
-    asf_query: ASFQuery
+    # Download method selection
+    download_method: Literal["full", "burst"] = Field(
+        "full",
+        description='Choose "full" or "burst" download method.',
+    )
+
+    # Burst-specific parameters (only used when download_method="burst")
+    polarizations: Optional[list[str]] = Field(
+        None,
+        description="List of polarizations for burst downloads (e.g., ['VV', 'VH'])",
+    )
+    swaths: Optional[list[str]] = Field(
+        None,
+        description="List of swaths for burst downloads (e.g., ['IW1', 'IW2', 'IW3'])",
+    )
+    min_bursts: int = Field(
+        1, description="Minimum number of bursts per swath for burst downloads"
+    )
+    all_anns: bool = Field(
+        False, description="Include all annotation files for burst downloads"
+    )
     skip_download_if_exists: bool = Field(
         True,
         description=(
@@ -125,6 +163,33 @@ class Workflow(YamlModel):
     )
     model_config = ConfigDict(extra="allow")
 
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def _parse_date(cls, v):
+        if isinstance(v, datetime):
+            return v
+        elif isinstance(v, date):
+            return datetime.combine(v, datetime.min.time())
+        from dateutil.parser import parse
+
+        return parse(v)
+
+    @field_validator("data_dir", "orbit_dir")
+    @classmethod
+    def _resolve_dirs(cls, v):
+        return Path(v).expanduser().resolve()
+
+    @field_validator("flight_direction")
+    @classmethod
+    def _accept_prefixes(cls, v):
+        if v is None:
+            return v
+        if v.lower().startswith("a"):
+            return "ASCENDING"
+        elif v.lower().startswith("d"):
+            return "DESCENDING"
+        return v
+
     @field_validator("wkt", mode="before")
     @classmethod
     def _check_file_and_parse_wkt(cls, v):
@@ -138,43 +203,17 @@ class Workflow(YamlModel):
                 raise ValueError(f"Invalid WKT string: {e}")
         return v
 
-    # Note: this model_validator's `info.data` only contains the fields that have
-    # been passed in by a user.
     @model_validator(mode="before")
     @classmethod
-    def _check_unset_dirs(cls, values: Any) -> "Workflow":
-        # TODO: Use the newer checks for fields set
+    def _check_bbox_and_wkt(cls, values: Any) -> Any:
         if isinstance(values, dict):
-            if "asf_query" not in values:
-                values["asf_query"] = {}
-            elif isinstance(values["asf_query"], ASFQuery):
-                values["asf_query"] = values["asf_query"].model_dump(
-                    exclude_unset=True, by_alias=True
-                )
-            elif not isinstance(values["asf_query"], dict):
-                # forward validation of unknown object to ASFQuery
-                ASFQuery.model_validate(values["asf_query"])
-
-            # also if they passed a wkt to the outer constructor, we need to
-            # pass through to the ASF query
-            values["asf_query"]["wkt"] = values.get("asf_query", {}).get(
-                "wkt"
-            ) or values.get("wkt")
-            values["asf_query"]["bbox"] = values.get("asf_query", {}).get(
-                "bbox"
-            ) or values.get("bbox")
-            # sync the other way too:
-            values["wkt"] = values["asf_query"]["wkt"]
-            values["bbox"] = values["asf_query"]["bbox"]
             if not values.get("bbox") and not values.get("wkt"):
                 raise ValueError("Must specify either `bbox` or `wkt`")
-
         return values
 
-    # expanduser and resolve each of the dirs:
-    @field_validator("work_dir", "orbit_dir")
+    @field_validator("work_dir")
     @classmethod
-    def _expand_dirs(cls, v):
+    def _expand_work_dir(cls, v):
         return Path(v).expanduser().resolve()
 
     # # while this one has all the fields
@@ -223,11 +262,41 @@ class Workflow(YamlModel):
 
     @classmethod
     def model_construct(cls, _fields_set=None, **values):
-        if "asf_query" not in values:
-            values["asf_query"] = ASFQuery.model_construct()
+        # No special handling needed since downloader is now computed
         return super().model_construct(
             **values,
         )
+
+    # Computed downloader based on configuration
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def downloader(self) -> Union[ASFFullDownload, BurstSubsetDownload]:
+        """Create the appropriate download strategy based on configuration."""
+        if self.download_method == "burst":
+            return BurstSubsetDownload(
+                method="burst",
+                rel_orbit=self.track,
+                start_date=self.start_date,
+                end_date=self.end_date,
+                extent=self.bbox,
+                polarizations=self.polarizations,
+                swaths=self.swaths,
+                min_bursts=self.min_bursts,
+                all_anns=self.all_anns,
+                work_dir=self.data_dir,
+            )
+        else:  # method == "full"
+            return ASFFullDownload(
+                method="full",
+                out_dir=self.data_dir,
+                bbox=self.bbox,
+                wkt=self.wkt,
+                start=self.start_date,
+                end=self.end_date,
+                relativeOrbit=self.track,  # Use alias
+                flightDirection=self.flight_direction,  # Use alias
+                unzip=self.unzip_data,
+            )
 
     # Track the directories that need to be created at start of workflow
     @computed_field  # type: ignore[prop-decorator]
@@ -279,8 +348,11 @@ class Workflow(YamlModel):
     # Intermediate outputs:
     # From step 1:
     def _get_existing_rslcs(self) -> list[Path]:
-        ext = ".SAFE" if self.asf_query.unzip else ".zip"
-        return sorted(self.asf_query.out_dir.glob("S*" + ext))
+        if self.download_method == "burst" or self.unzip_data:
+            ext = ".SAFE"
+        else:
+            ext = ".zip"
+        return sorted(self.data_dir.glob("S*" + ext))
 
     # From step 2:
     def _get_existing_gslcs(self) -> list[Path]:
@@ -323,7 +395,7 @@ class Workflow(YamlModel):
         if existing_files and self.skip_download_if_exists:
             logger.info(
                 f"Found {len(existing_files)} existing files in"
-                f" {self.asf_query.out_dir}. Skipping download."
+                f" {self.data_dir}. Skipping download."
             )
             return existing_files
 
@@ -333,7 +405,7 @@ class Workflow(YamlModel):
         # Maybe there can be a "force" flag to re-download everything?
         # or perhaps an API search, then if the number matches, we can skip
         # rather than let aria2c start and do the checksums
-        return self.asf_query.download(log_dir=self.log_dir)
+        return self.downloader.download(log_dir=self.log_dir)
 
     @log_runtime
     def _geocode_slcs(self, slc_files, dem_file, burst_db_file):
@@ -349,7 +421,7 @@ class Workflow(YamlModel):
             pol_type=self.pol_type,
             out_dir=self.gslc_dir,
             overwrite=self.overwrite,
-            using_zipped=not self.asf_query.unzip,
+            using_zipped=not self.unzip_data,
         )
 
         def cfg_to_filename(cfg_path: Path) -> str:
@@ -561,7 +633,7 @@ class Workflow(YamlModel):
         # Second step:
         if starting_step <= 2:
             burst_db_file = get_burst_db()
-            download_orbits(self.asf_query.out_dir, self.orbit_dir)
+            download_orbits(self.data_dir, self.orbit_dir)
             rslc_files = self._get_existing_rslcs()
             self._geocode_slcs(rslc_files, self.dem_filename, burst_db_file)
 

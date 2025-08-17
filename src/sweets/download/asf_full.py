@@ -11,11 +11,11 @@ import os
 import subprocess
 import sys
 import zipfile
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, List, Literal, Optional
+from typing import Any, Literal, Optional
 from urllib.parse import urlencode
 
 import requests
@@ -26,7 +26,6 @@ from shapely.geometry import box
 
 from .._log import get_log, log_runtime
 from .._types import Filename
-from .._unzip import unzip_all
 from ._strategy import DownloadStrategy
 
 logger = get_log(__name__)
@@ -199,7 +198,7 @@ class ASFFullDownload(DownloadStrategy, YamlModel):
             list(executor.map(download_url, enumerate(urls)))
 
     @log_runtime
-    def download(self, *, log_dir: Path) -> List[Path]:
+    def download(self, *, log_dir: Path) -> list[Path]:
         """Download full SAFE files from ASF."""
         # Start by saving data available as geojson
         results = self.query_results()
@@ -251,3 +250,59 @@ def delete_tiffs_within_zip(data_path: Filename, pol: str = "vh"):
     cmd = f"""find {data_path} -name "S*.zip" | xargs -I{{}} -n1 -P4 zip -d {{}} '*-vh-*.tiff'"""  # noqa
     logger.info(cmd)
     subprocess.run(cmd, shell=True, check=True)
+
+
+def unzip_one(
+    filepath: Filename, pol: str = "vv", out_dir: Filename = Path(".")
+) -> Path:
+    """Unzip one Sentinel-1 zip file."""
+    if pol is None:
+        pol = ""
+
+    # unzip all of these
+    to_unzip = [pol.lower(), "preview", "support", "manifest.safe"]
+    with zipfile.ZipFile(filepath, "r") as zipref:
+        # Get the list of files in the zip
+        names_to_extract = [
+            fp
+            for fp in zipref.namelist()
+            if any(key in str(fp).lower() for key in to_unzip)
+        ]
+        zipref.extractall(path=out_dir, members=names_to_extract)
+    # Return the path to the unzipped file
+    return Path(filepath).with_suffix(".SAFE")
+
+
+def unzip_all(
+    path: Filename = ".",
+    pol: str = "vv",
+    out_dir: Filename = Path("."),
+    delete_zips: bool = False,
+    n_workers: int = 4,
+) -> list[Path]:
+    """Find all .zips and unzip them, skipping overwrites."""
+    zip_files = list(Path(path).glob("S1[AB]_*IW*.zip"))
+    logger.info(f"Found {len(zip_files)} zip files to unzip")
+
+    existing_safes = list(Path(path).glob("S1[AB]_*IW*.SAFE"))
+    logger.info(f"Found {len(existing_safes)} SAFE files already unzipped")
+
+    # Skip if already unzipped
+    files_to_unzip = [
+        fp for fp in zip_files if fp.stem not in [sf.stem for sf in existing_safes]
+    ]
+    logger.info(f"Unzipping {len(files_to_unzip)} zip files")
+    # Unzip in parallel
+    newly_unzipped = []
+    with ThreadPoolExecutor(max_workers=n_workers) as executor:
+        futures = [
+            executor.submit(unzip_one, fp, pol=pol, out_dir=out_dir)
+            for fp in files_to_unzip
+        ]
+        for future in as_completed(futures):
+            newly_unzipped.append(future.result())
+
+    if delete_zips:
+        for fp in files_to_unzip:
+            fp.unlink()
+    return newly_unzipped + existing_safes

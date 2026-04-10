@@ -1,282 +1,159 @@
+"""Sweets command-line interface (tyro-driven).
+
+Three subcommands:
+
+- ``sweets config``  — write a ``sweets_config.yaml`` from a few flags.
+- ``sweets run``     — execute a workflow from a config file.
+- ``sweets server``  — launch the (WIP) web UI server.
+
+The CLI intentionally exposes only the most common knobs. For the long tail
+(dolphin half-window, COMPASS posting, etc.) edit the YAML directly or
+construct :class:`sweets.core.Workflow` in Python.
+"""
+
 from __future__ import annotations
 
-import argparse
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
+
+import tyro
 
 
-def _get_cli_args() -> dict:
-    parser = argparse.ArgumentParser(
-        prog=__package__,
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    subparsers = parser.add_subparsers()
-    config_parser = subparsers.add_parser(
-        "config",
-        help="Create a sweets_config.yaml file",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    config_parser._action_groups.pop()
+@dataclass
+class ConfigCmd:
+    """Create a sweets_config.yaml from CLI arguments."""
 
-    base = config_parser.add_argument_group()
-    base.add_argument(
-        "--save-empty",
-        action="store_true",
-        help="Print an empty config file to `outfile",
-    )
-    base.add_argument(
-        "-o",
-        "--outfile",
-        help=(
-            "Path to save the config file to. \nIf not specified, will save to"
-            " `sweets_config.yaml` in the current directory."
-        ),
-        default="sweets_config.yaml",
-    )
-    base.add_argument(
-        "-b",
-        "--bbox",
-        nargs=4,
-        metavar=("left", "bottom", "right", "top"),
-        type=float,
-        help=(
-            "Bounding box of area of interest in decimal degrees longitude/latitude: \n"
-            "  (e.g. --bbox -106.1 30.1 -103.1 33.1 ). \n"
-        ),
-    )
-    base.add_argument(
-        "--wkt",
-        help=(
-            "Alternate to bounding box specification: \nWKT string (or file containing"
-            " polygon) for AOI bounds (e.g. from the ASF Vertex tool). \nIf passing "
-            " a string polygon, you must enclose in quotes."
-        ),
-    )
-    aoi = config_parser.add_argument_group(
-        title="asf_query",
-        description="Arguments specifying the area of interest for the S1 data query",
-    )
-    aoi.add_argument(
-        "--track",
-        "--relativeOrbit",
-        dest="relativeOrbit",
-        type=int,
-        help="Required: the relative orbit/track",
-    )
-    aoi.add_argument(
-        "--start",
-        help="Starting date for query (recommended: YYYY-MM-DD)",
-    )
-    aoi.add_argument(
-        "--end",
-        help="Ending date for query (recommended: YYYY-MM-DD). Defaults to today.",
-    )
-    aoi.add_argument(
-        "--frames",
-        type=int,
-        nargs=2,
-        metavar=("start_frame", "end_frame"),
-        help=(
-            "Limit to a range of frames (e.g. --frames 1 10). Frame numbers come from"
-            " ASF website"
-        ),
-    )
-    aoi.add_argument(
-        "--out-dir",
-        help=(
-            "Directory to store data in (or directory containing existing downloads)."
-            " If None, will store in `data/` "
-        ),
-    )
+    start: str
+    """Start date for the burst search (YYYY-MM-DD)."""
 
-    interferogram_options = config_parser.add_argument_group("interferogram_options")
-    interferogram_options.add_argument(
-        "--looks",
-        type=int,
-        nargs=2,
-        metavar=("az_looks", "range_looks"),
-        default=[6, 12],
-        help=(
-            "Number of looks in azimuth (rows) and range (cols) to use for"
-            " interferograms (e.g. --looks 6 12). GSLCs are geocoded at 10m x 5m"
-            " posting, so default looks of 6x12 are 60m x 60m."
-        ),
-    )
-    interferogram_options.add_argument(
-        "-t",
-        "--max-temporal-baseline",
-        type=int,
-        help="Maximum temporal baseline (in days) to consider for interferograms.",
-    )
-    interferogram_options.add_argument(
-        "--max-bandwidth",
-        type=int,
-        default=4,
-        help="Alternative to temporal baseline: form the nearest n- ifgs.",
-    )
-    base.add_argument(
-        "--orbit-dir",
-        help=(
-            "Directory to store orbit files in (or directory containing existing"
-            " orbits). If None, will store in `orbits/` "
-        ),
-    )
-    base.add_argument(
-        "-nw",
-        "--n-workers",
-        type=int,
-        default=4,
-        help=(
-            "Number of background workers to use for parallel processing"
-            " GSLC/ifgs/unwrapping."
-        ),
-    )
-    base.add_argument(
-        "-tpw",
-        "--threads-per-worker",
-        type=int,
-        default=16,
-        help=(
-            "For each background worker, number of threads to use (e.g."
-            " OMP_NUM_THREADS, or in numpy multithreading)."
-        ),
-    )
-    config_parser.set_defaults(func=create_config)
+    end: str
+    """End date for the burst search (YYYY-MM-DD)."""
 
-    # ##########################
-    run_parser = subparsers.add_parser(
-        "run",
-        help="Run the workflow using a sweets_config.yaml file",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
+    track: int
+    """Sentinel-1 relative orbit / track number."""
 
-    run_parser.add_argument(
-        "config_file",
-        type=Path,
-        help=(
-            "Path to a pre-existing sweets_config.yaml file. \nIf not specified, a new"
-            " config will be created from the command line arguments."
-        ),
-    )
-    run_parser.add_argument(
-        "--starting-step",
-        type=int,
-        default=1,
-        help=(
-            "If > 1, will skip earlier steps of the workflow. Step: "
-            "1. Download RSLC data from ASF. 2. Create GSLCs. "
-            "3. Create burst interfereograms. "
-            "4. Stitch burst interferograms into one per date. "
-            "5. Unwrap. "
-        ),
-    )
+    bbox: Optional[tuple[float, float, float, float]] = None
+    """AOI as left bottom right top in decimal degrees. One of --bbox or --wkt is required."""
 
-    run_parser.set_defaults(func=run_workflow)
+    wkt: Optional[str] = None
+    """AOI as a WKT polygon string, or path to a .wkt file. Overrides --bbox."""
 
-    # ##########################
-    server_parser = subparsers.add_parser(
-        "server",
-        help="Launch the sweets web UI",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    server_parser.add_argument(
-        "--host",
-        default="127.0.0.1",
-        help="Host to bind to",
-    )
-    server_parser.add_argument(
-        "--port",
-        type=int,
-        default=8000,
-        help="Port to bind to",
-    )
-    server_parser.add_argument(
-        "--reload",
-        action="store_true",
-        help="Auto-reload on code changes (development mode)",
-    )
-    server_parser.set_defaults(func=run_server)
+    out_dir: Path = field(default_factory=lambda: Path("data"))
+    """Where downloaded SAFE bundles will live."""
 
-    arg_groups = {}
+    work_dir: Path = field(default_factory=Path.cwd)
+    """Top-level working directory for the workflow."""
 
-    args = parser.parse_args()
-    arg_dict = vars(args)
-    if not arg_dict:
-        parser.print_help()
-        sys.exit(1)
+    polarizations: list[str] = field(default_factory=lambda: ["VV"])
+    """Polarizations to keep (e.g. ['VV'] or ['VV', 'VH'])."""
 
-    if arg_dict["func"].__name__ == "create_config":
-        for group in config_parser._action_groups:
-            # skip positional arguments
-            if group.title == "positional arguments":
-                continue
-            group_dict = {
-                a.dest: getattr(args, a.dest, None) for a in group._group_actions
+    swaths: Optional[list[str]] = None
+    """Restrict to specific subswaths (e.g. ['IW2']). Default: all that cover the AOI."""
+
+    n_workers: int = 4
+    """Process pool size for COMPASS geocoding."""
+
+    output: Path = Path("sweets_config.yaml")
+    """Where to write the config file."""
+
+    def run(self) -> None:
+        """Build and dump a Workflow config to YAML."""
+        # Heavy imports go here so `sweets --help` is snappy.
+        from sweets.core import Workflow
+
+        if self.bbox is None and self.wkt is None:
+            print("error: one of --bbox or --wkt is required", file=sys.stderr)
+            raise SystemExit(2)
+
+        workflow = Workflow.model_validate(
+            {
+                "bbox": self.bbox,
+                "wkt": self.wkt,
+                "work_dir": self.work_dir,
+                "n_workers": self.n_workers,
+                "search": {
+                    "start": self.start,
+                    "end": self.end,
+                    "track": self.track,
+                    "out_dir": self.out_dir,
+                    "polarizations": self.polarizations,
+                    "swaths": self.swaths,
+                },
             }
-            # remove None values
-            group_dict = {k: v for k, v in group_dict.items() if v is not None}
-            if group.title:
-                arg_groups[group.title] = group_dict
-            else:
-                arg_groups.update(group_dict)  # type: ignore
-        arg_groups["func"] = arg_dict["func"]
-        return arg_groups
-    else:
-        return arg_dict
-
-
-def run_server(kwargs: dict):
-    """Launch the sweets web UI server."""
-    try:
-        import uvicorn
-    except ImportError:
-        print(
-            "Web dependencies not installed. Install with:\n"
-            "  pip install sweets[web]\n"
-            "  # or: pixi install -e web",
-            file=sys.stderr,
         )
-        sys.exit(1)
+        workflow.to_yaml(self.output)
+        print(f"wrote {self.output}", file=sys.stderr)
 
-    uvicorn.run(
-        "sweets.web.app:app",
-        host=kwargs.get("host", "127.0.0.1"),
-        port=kwargs.get("port", 8000),
-        reload=kwargs.get("reload", False),
+
+@dataclass
+class RunCmd:
+    """Execute a sweets workflow from a config file."""
+
+    config_file: Path
+    """Path to a sweets_config.yaml."""
+
+    starting_step: int = 1
+    """Skip earlier stages (1=download, 2=geocode, 3=dolphin)."""
+
+    def run(self) -> None:
+        """Load the workflow and run it."""
+        from sweets.core import Workflow
+
+        if not self.config_file.exists():
+            msg = f"config file {self.config_file} does not exist"
+            raise SystemExit(msg)
+        workflow = Workflow.from_yaml(self.config_file)
+        workflow.run(starting_step=self.starting_step)
+
+
+@dataclass
+class ServerCmd:
+    """Launch the (WIP) sweets web UI server."""
+
+    host: str = "127.0.0.1"
+    """Bind address."""
+
+    port: int = 8000
+    """TCP port."""
+
+    reload: bool = False
+    """Auto-reload on code changes (dev mode)."""
+
+    def run(self) -> None:
+        """Run uvicorn against sweets.web.app:app."""
+        try:
+            import uvicorn
+        except ImportError:
+            print(
+                "Web dependencies not installed. Install with one of:\n"
+                "  pip install 'sweets[web]'\n"
+                "  pixi install -e web",
+                file=sys.stderr,
+            )
+            raise SystemExit(1) from None
+        uvicorn.run(
+            "sweets.web.app:app",
+            host=self.host,
+            port=self.port,
+            reload=self.reload,
+        )
+
+
+def main() -> None:
+    """Top-level CLI entry point."""
+    cmd = tyro.extras.subcommand_cli_from_dict(
+        {
+            "config": ConfigCmd,
+            "run": RunCmd,
+            "server": ServerCmd,
+        },
+        prog="sweets",
+        description="Sentinel-1 InSAR workflow runner.",
     )
+    cmd.run()
 
 
-def run_workflow(kwargs: dict):
-    """Run the workflow using a sweets_config.yaml file."""
-    # importing below for faster CLI startup
-    from sweets.core import Workflow
-
-    cfg_file = kwargs["config_file"]
-    if not cfg_file.exists():
-        raise ValueError(f"Config file {cfg_file} does not exist")
-
-    if "yaml" not in cfg_file.suffix and "yml" not in cfg_file.suffix:
-        raise ValueError(f"Config file {cfg_file} is not a yaml file.")
-
-    workflow = Workflow.from_yaml(cfg_file)
-    workflow.run(starting_step=kwargs.get("starting_step", 1))
-
-
-def create_config(kwargs: dict):
-    """Create a sweets_config.yaml file from command line arguments."""
-    from sweets.core import Workflow
-
-    outfile = kwargs.pop("outfile", None)
-    print(f"Creating config file at {outfile}.", file=sys.stderr)
-    if kwargs.pop("save_empty", False):
-        Workflow.print_yaml_schema(outfile)
-    else:
-        workflow = Workflow(**kwargs)
-        workflow.to_yaml(outfile)
-
-
-def main():
-    """Top-level command line interface to the workflows."""
-    arg_dict = _get_cli_args()
-    func = arg_dict.pop("func")
-    func(arg_dict)
+if __name__ == "__main__":
+    main()

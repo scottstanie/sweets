@@ -75,10 +75,10 @@ class Workflow(YamlModel):
         ),
     )
     water_mask_filename: Path = Field(
-        default_factory=lambda data: data["work_dir"] / "watermask.flg",
+        default_factory=lambda data: data["work_dir"] / "watermask.tif",
         description=(
-            "Water mask in EPSG:4326. If left as the default, sweets downloads"
-            " an SRTM-based water mask via sardem."
+            "Water mask in EPSG:4326 (uint8 GTiff, 1=land, 0=water). If left"
+            " as the default, sweets derives one from a Copernicus DEM."
         ),
     )
     orbit_dir: Path = Field(
@@ -250,8 +250,19 @@ class Workflow(YamlModel):
     def _existing_safes(self) -> list[Path]:
         return self.search.existing_safes()
 
+    # COMPASS-written CSLC HDF5s are tens to hundreds of MB. A 6-KB shell is
+    # a leftover from a crashed run that wrote the attribute scaffolding but
+    # never the data — accepting those silently breaks dolphin downstream
+    # (issue #107). Treat anything below this size as not-yet-produced.
+    _MIN_VALID_GSLC_BYTES = 1 * 1024 * 1024
+
     def _existing_gslcs(self) -> list[Path]:
-        return sorted(self.gslc_dir.glob("t*/*/t*.h5"))
+        return [
+            p
+            for p in sorted(self.gslc_dir.glob("t*/*/t*.h5"))
+            if not p.name.startswith("static_")
+            and p.stat().st_size >= self._MIN_VALID_GSLC_BYTES
+        ]
 
     def _existing_static_layers(self) -> list[Path]:
         return sorted(self.gslc_dir.glob("t*/*/static_*.h5"))

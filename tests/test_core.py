@@ -84,7 +84,7 @@ class TestWorkflow:
         # Defaults are derived from work_dir.
         w = Workflow(bbox=bbox, search=search_kwargs)
         assert w.dem_filename == w.work_dir / "dem.tif"
-        assert w.water_mask_filename == w.work_dir / "watermask.flg"
+        assert w.water_mask_filename == w.work_dir / "watermask.tif"
         assert w.log_dir == w.work_dir / "logs"
 
     def test_missing_aoi_raises(self, search_kwargs):

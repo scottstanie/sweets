@@ -8,10 +8,12 @@ loose, and where to look next.
 | layer | before | after |
 |---|---|---|
 | **download (default)** | `ASFQuery` → ASF API + wget/aria2c, full S1 frames | `BurstSearch` → `burst2safe.burst2stack`, just the bursts that intersect the AOI |
-| **download (alt source)** | n/a | `OperaCslcSearch` → `opera_utils.download.{search,download}_cslcs` for pre-made OPERA CSLCs, plus `download_cslc_static_layers`. Pick via `--source opera-cslc`; locked to OPERA's 5×10 m posting. |
+| **download (alt source: OPERA)** | n/a | `OperaCslcSearch` → `opera_utils.download.{search,download}_cslcs` for pre-made OPERA CSLCs, plus `download_cslc_static_layers`. Pick via `--source opera-cslc`; locked to OPERA's 5×10 m posting. |
+| **download (alt source: NISAR)** | n/a | `NisarGslcSearch` → `opera_utils.nisar.run_download` for pre-geocoded NISAR GSLC HDF5s (L-band, UTM). Pick via `--source nisar-gslc --frequency A --polarizations HH`. Skips COMPASS + geometry stitching entirely; dolphin reads the grid from the HDF5 directly. Tropo not yet supported on this path. |
 | **s1-reader** | upstream `isce-framework/s1-reader` (broken on numpy 2, see #132) | `scottstanie/s1-reader@develop-scott` |
 | **COMPASS** | upstream `opera-adt/COMPASS` (np.string_/np.unicode_ → numpy 2 crash) | `scottstanie/COMPASS@develop-scott` |
-| **opera-utils** | conda-forge | `scottstanie/opera-utils@develop-scott` (carries the high-level tropo workflow + the CSLC download API) |
+| **opera-utils** | conda-forge | `scottstanie/opera-utils@develop-scott` (carries the high-level tropo workflow + the CSLC download API + the NISAR download API + the Float16 GTIFF fix) |
+| **dolphin** | upstream | `scottstanie/dolphin@develop-scott` (carries the `_yaml_model._add_comments` fix for Union-of-submodels schemas) |
 | **geocoding** | COMPASS via `_geocode_slcs.py` | unchanged for `--source safe`; **skipped entirely** for `--source opera-cslc` |
 | **interferograms / stitch / unwrap / timeseries** | hand-rolled in `sweets.interferogram` + `sweets.core` + `dolphin.unwrap.run` | one call to `dolphin.workflows.displacement.run` via the new `sweets._dolphin` adapter |
 | **tropo correction** | n/a | new opt-in post-step (`--do-tropo`) wrapping `opera_utils.tropo.create_tropo_corrections_for_stack` + `apply_tropo_to_unwrapped` |
@@ -53,43 +55,44 @@ loose, and where to look next.
    (`--track`, etc.) and old output paths (`interferograms/stitched/`).
    Should be rewritten against the new dolphin output layout
    (`dolphin/timeseries/*.tif`, `dolphin/interferograms/*.tif`) and show
-   both `--source safe` and `--source opera-cslc`.
+   all three `--source` options (`safe`, `opera-cslc`, `nisar-gslc`).
 2. **Update `README.md`** — still describes the frame-based download flow.
    Replace with the burst-subset usage, the OPERA CSLC alternative, the
-   `--do-tropo` knob, and the pixi install path.
+   NISAR option, the `--do-tropo` knob, and the pixi install path.
 3. **Add a `sweets export-mintpy` subcommand** that wraps dolphin's mintpy
    exporter (closes #128 + #42). Should be a thin function in
    `sweets._mintpy.py`.
-4. **Land the dolphin commented-yaml fix upstream.** The 1-liner is in
-   `_yaml_model.py` at the `anyOf` branch — fall back to the `$ref` name
-   when an entry has no `type`. Once that lands, drop
-   `sweets/_dolphin_yaml_compat.py`.
-5. **Wire pixi to run the smoke test in CI.** A `pixi run smoke` task that
-   does `python -m sweets config ... && python -m sweets run` against a
-   pre-staged tiny stack would catch the kind of "import works but
-   pipeline doesn't" regression that bit several open issues.
-6. **Average tropo across burst sensing times.** `apply_tropo_to_unwrapped`
-   currently keys tropo files by `YYYYMMDD` and the index dict overwrites
-   when there are multiple bursts on the same day; the actual tropo
-   correction varies slightly across the ~10-second strip. For small AOIs
-   the variance is negligible; for large AOIs an average (or
-   nearest-by-burst) lookup would be more correct.
+4. **Smoke-test the NISAR path end-to-end.** `NisarGslcSearch` is
+   unit-tested for config round-trip and exercises `run_download` at
+   the signature level, but there's no full
+   download-+-dolphin smoke test yet. A `pixi run smoke-nisar` against
+   a known-good NISAR beta product would be the obvious next step.
+5. **Tropo correction for NISAR.** NISAR GSLCs don't have a separate
+   CSLC-STATIC file, so there's no stitched `local_incidence_angle.tif`
+   for `apply_tropo` to consume. `Workflow._run_tropo` currently warns
+   and skips when the source is NISAR. Need either: (a) a sweets-side
+   helper that extracts / computes incidence from the NISAR GSLC's
+   orbit + DEM, (b) a separate NISAR-specific GeoTIFF we ship, or
+   (c) user-supplied incidence raster path on the CLI.
+6. **Wire pixi to run the smoke tests in CI.** `pixi run smoke-opera`,
+   `pixi run smoke-safe`, `pixi run smoke-nisar` against pre-staged
+   tiny stacks would catch the kind of "import works but pipeline
+   doesn't" regression that bit several open issues.
 7. **Web UI** — left exactly as Scott had it under `src/sweets/web/`. Excluded
    from mypy and from this revival's scope.
 
 ## Things I (Claude) deliberately did NOT do
 
-- **Touch `dolphin`.** The user's reference work uses a `develop-scott` fork of
-  dolphin, but Scott himself maintains upstream dolphin, so sweets pins
-  upstream `dolphin` for now. If you need an unreleased dolphin feature, swap
-  in `dolphin = { git = "...", branch = "..." }` under `[tool.pixi.pypi-dependencies]`.
-- **Touch upstream `opera-adt/COMPASS`.** All COMPASS fixes landed on the
-  personal fork `scottstanie/COMPASS@develop-scott`; merging them upstream
-  is left to whoever is talking to OPERA.
+- **Touch upstream `isce-framework/dolphin`, `opera-adt/COMPASS`, or
+  `opera-adt/opera-utils`.** All fixes landed on personal forks
+  `scottstanie/<repo>@develop-scott`; merging them upstream is left to
+  whoever is talking to the dolphin release channel / OPERA.
 - **Touch the COMPASS / `_geocode_slcs.py` integration.** Geocoding still uses
   COMPASS; the hand-rolled config-file shuffling in `_geocode_slcs.py` is the
   same as on main. If we want to drop COMPASS in favor of an `isce3.geocode_slc`
   call directly, that's a separate (large) job.
+- **Build a NISAR incidence-angle raster for tropo.** `Workflow._run_tropo`
+  warns and skips when the source is NISAR. See "What's still loose".
 - **Notebook updates** — out of scope for this swing.
 
 ## Smoke test results, round 2 (2026-04-10, OPERA CSLC + tropo path)
@@ -137,11 +140,12 @@ Notes:
    inside `sweets._tropo` as a side-effect import; no opera-utils
    change needed.
 3. **dolphin's commented-yaml emitter** (`_yaml_model._add_comments`)
-   raises `KeyError` walking an `anyOf` schema entry that's a `$ref`
-   to a sub-model — which is exactly what `Workflow.search:
-   Union[BurstSearch, OperaCslcSearch]` produces. Worked around with a
-   monkey-patch in `sweets._dolphin_yaml_compat`. Real fix is a 1-liner
-   upstream in dolphin.
+   raised `KeyError` walking an `anyOf` schema entry that's a `$ref`
+   to a sub-model — standard Pydantic 2 behaviour for a Union of
+   submodels. Fixed upstream in
+   [`scottstanie/dolphin@develop-scott`](https://github.com/scottstanie/dolphin/commit/46762c6);
+   sweets now pins that branch and the `_dolphin_yaml_compat` shim
+   has been deleted.
 4. **Stale tropo intermediates from a failed run.** The Float16
    reference correction tif from the buggy first run survived past the
    GTIFF_KWARGS fix and kept crashing reads. Wipe `dolphin/tropo/` if

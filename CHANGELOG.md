@@ -9,7 +9,14 @@
   (and the matching CSLC-STATIC layers) directly from ASF DAAC. Pick
   it via `sweets config --source opera-cslc`. Locked to OPERA's 5 m × 10 m
   posting; great for CONUS where OPERA has produced for the AOI.
-  `Workflow.search` is a `Union[BurstSearch, OperaCslcSearch]`
+- **NISAR GSLC source.** A third source class `NisarGslcSearch` wraps
+  `opera_utils.nisar.run_download` to fetch pre-geocoded NISAR GSLC
+  HDF5s via CMR (L-band, UTM, already geocoded). Pick it via
+  `sweets config --source nisar-gslc --frequency A --polarizations HH`.
+  Skips COMPASS, burst-db, orbits, and geometry stitching; dolphin
+  reads the grid directly from the HDF5. Tropo correction is not yet
+  supported on this path (NISAR GSLCs carry no stitched incidence angle).
+- `Workflow.search` is a `Union[BurstSearch, OperaCslcSearch, NisarGslcSearch]`
   discriminated by a `kind` field; existing configs without a `kind`
   default to `safe` for backwards compat.
 - **Tropospheric correction (opt-in).** New `--do-tropo` flag wires the
@@ -27,12 +34,14 @@
 - **pixi as the primary install.** `pyproject.toml` is reorganized so the
   `[tool.pixi.*]` sections are the canonical environment definition; an
   `environment.yml` synced from pixi is provided for non-pixi users.
-- **`s1-reader`, `COMPASS` and `opera-utils` fork pins.** sweets now
-  installs all three from `scottstanie/<repo>@develop-scott`, which carry
-  numpy 2 fixes (polyfit scalar in s1-reader, `np.string_`/`np.unicode_`
-  in COMPASS), the new tropo workflow / `search_tropo` CMR client in
-  opera-utils, and a fix for the GDT_Float16 GTIFF_KWARGS that crashed
-  rasterio readers in `apply_tropo`. Closes #132.
+- **`s1-reader`, `COMPASS`, `opera-utils` and `dolphin` fork pins.**
+  sweets now installs all four from `scottstanie/<repo>@develop-scott`.
+  The develop-scott branches carry numpy 2 fixes (polyfit scalar in
+  s1-reader, `np.string_`/`np.unicode_` in COMPASS), the new tropo
+  workflow / `search_tropo` CMR client in opera-utils, the
+  GDT_Float16 GTIFF_KWARGS fix in opera-utils' `apply_tropo`, and a
+  `_yaml_model._add_comments` fix in dolphin so Union-of-submodels
+  schemas serialize cleanly. Closes #132.
 
 **Removed**
 - `sweets.interferogram` (replaced by dolphin's interferogram network).

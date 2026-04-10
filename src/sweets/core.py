@@ -433,6 +433,8 @@ class Workflow(YamlModel):
         # Group the SLCs by burst:
         # {'t078_165573_iw2': [PosixPath('gslcs/t078_165573_iw2/20221029/...], 't078_...
         burst_to_gslc = group_by_burst(gslc_files)
+        # Warn about inconsistent date coverage across bursts
+        _warn_inconsistent_dates(burst_to_gslc)
         burst_to_ifg = group_by_burst(self._get_existing_burst_ifgs())
         ifg_path_list = []
         for burst, gslc_files in burst_to_gslc.items():
@@ -591,3 +593,39 @@ class Workflow(YamlModel):
         unwrapped_files = self._unwrap_ifgs(stitched_ifg_files, cor_files)
 
         return unwrapped_files
+
+
+def _warn_inconsistent_dates(
+    burst_to_files: dict[str, list[Path]],
+) -> None:
+    """Log warnings if bursts have different date coverage."""
+    from opera_utils import get_dates
+
+    burst_dates: dict[str, set[str]] = {}
+    for burst, files in burst_to_files.items():
+        dates = set()
+        for f in files:
+            d = get_dates(f)
+            if d:
+                dates.add(d[0].strftime("%Y%m%d"))
+        burst_dates[burst] = dates
+
+    if not burst_dates:
+        return
+
+    all_dates = set().union(*burst_dates.values())
+    common_dates = set.intersection(*burst_dates.values())
+    extra_dates = all_dates - common_dates
+    if extra_dates:
+        logger.warning(
+            f"Dates not common to all bursts: {sorted(extra_dates)}. "
+            "This can cause geometry/footprint inconsistencies in stitched outputs. "
+            "Consider filtering to common dates only."
+        )
+        for burst, dates in burst_dates.items():
+            burst_extra = dates - common_dates
+            if burst_extra:
+                logger.warning(
+                    f"  {burst} has {len(burst_extra)} extra date(s): "
+                    f"{sorted(burst_extra)}"
+                )

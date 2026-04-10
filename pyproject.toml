@@ -47,6 +47,16 @@ dependencies = [
   "sentineleof",
 ]
 
+[project.optional-dependencies]
+web = [
+  "fastapi>=0.100",
+  "uvicorn[standard]",
+  "sqlmodel",
+  "python-multipart",
+  "websockets",
+  "titiler.core",
+]
+
 [project.urls]
 Homepage = "https://github.com/scottstanie/sweets"
 "Bug Tracker" = "https://github.com/scottstanie/sweets/issues"
@@ -108,10 +118,19 @@ cartopy = "*"
 matplotlib = "*"
 colorcet = "*"
 
+[tool.pixi.feature.web.dependencies]
+fastapi = ">=0.100"
+uvicorn = "*"
+sqlmodel = "*"
+python-multipart = "*"
+websockets = "*"
+titiler-core = "*"
+
 [tool.pixi.environments]
 default = ["test", "plotting"]
 test = ["test"]
 plotting = ["plotting"]
+web = ["web", "plotting"]
 minimal = []
 
 [tool.setuptools_scm]
@@ -133,6 +152,9 @@ known_first_party = ["sweets"]
 python_version = "3.12"
 ignore_missing_imports = true
 plugins = ["pydantic.mypy"]
+# The web UI is WIP and tabled; sqlmodel's `table=True` metaclass argument
+# trips mypy without the sqlmodel plugin. Skip until web is revived.
+exclude = "src/sweets/web/"
 
 [tool.pydocstyle]
 ignore = "D100,D102,D104,D105,D106,D107,D203,D204,D213,D413"

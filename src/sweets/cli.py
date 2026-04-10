@@ -173,6 +173,30 @@ def _get_cli_args() -> dict:
 
     run_parser.set_defaults(func=run_workflow)
 
+    # ##########################
+    server_parser = subparsers.add_parser(
+        "server",
+        help="Launch the sweets web UI",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    server_parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host to bind to",
+    )
+    server_parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port to bind to",
+    )
+    server_parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Auto-reload on code changes (development mode)",
+    )
+    server_parser.set_defaults(func=run_server)
+
     arg_groups = {}
 
     args = parser.parse_args()
@@ -199,6 +223,27 @@ def _get_cli_args() -> dict:
         return arg_groups
     else:
         return arg_dict
+
+
+def run_server(kwargs: dict):
+    """Launch the sweets web UI server."""
+    try:
+        import uvicorn
+    except ImportError:
+        print(
+            "Web dependencies not installed. Install with:\n"
+            "  pip install sweets[web]\n"
+            "  # or: pixi install -e web",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    uvicorn.run(
+        "sweets.web.app:app",
+        host=kwargs.get("host", "127.0.0.1"),
+        port=kwargs.get("port", 8000),
+        reload=kwargs.get("reload", False),
+    )
 
 
 def run_workflow(kwargs: dict):

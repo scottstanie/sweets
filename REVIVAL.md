@@ -76,42 +76,81 @@ loose, and where to look next.
   dolphin, but Scott himself maintains upstream dolphin, so sweets pins
   upstream `dolphin` for now. If you need an unreleased dolphin feature, swap
   in `dolphin = { git = "...", branch = "..." }` under `[tool.pixi.pypi-dependencies]`.
+- **Land a real COMPASS numpy 2 fix.** I added a runtime monkey-patch to
+  `_geocode_slcs.py` to keep the smoke test moving. The proper fix is to
+  PR `np.string_` → `np.bytes_` and `np.unicode_` → `np.str_` against
+  `scottstanie/COMPASS` (~64 occurrences across `s1_geocode_*.py` etc.),
+  cut a `develop-scott` branch, and pin sweets to it via
+  `[tool.pixi.pypi-dependencies]` like we already do for s1-reader. Then
+  drop the shim from `_geocode_slcs.py`.
 - **Touch the COMPASS / `_geocode_slcs.py` integration.** Geocoding still uses
   COMPASS; the hand-rolled config-file shuffling in `_geocode_slcs.py` is the
   same as on main. If we want to drop COMPASS in favor of an `isce3.geocode_slc`
   call directly, that's a separate (large) job.
 - **Notebook updates** — out of scope for this swing.
 
-## Smoke test results (2026-04-09)
+## Smoke test results (2026-04-10)
 
-Ran the burst2safe download path against the pecos AOI (`-102.96 31.22
--101.91 31.56`, track 78, dates `2021-06-05` → `2021-06-22`, swath `IW2`)
-into `/Volumes/WD_BLACK_SN7100_4TB/Documents/Learning/s1-testing/pecos_revival/`.
+Full end-to-end run against the pecos AOI (`-102.96 31.22 -101.91 31.56`,
+track 78, dates `2021-06-05` → `2021-06-22`, swath `IW2`) in
+`/Volumes/WD_BLACK_SN7100_4TB/Documents/Learning/s1-testing/pecos_revival/`.
 
-Result:
+**It works.** The workflow runs cleanly through download → DEM → water
+mask → orbits → COMPASS geocoding (10 GSLCs + 5 static layers) → geometry
+stitching → dolphin (phase linking → ifg → unwrap → timeseries → velocity).
 
-- 2 SAFEs produced (one per acquisition date), 769 MB and 785 MB respectively.
-- Each contains `manifest.safe`, the IW2 measurement TIFF (~767 MB,
-  burst-trimmed to the AOI), and full IW1/IW2/IW3 annotations
-  (`all_anns=True` is set so COMPASS / s1-reader can find IW2's annotation).
-- Total wall time: ~4 minutes.
-- `Workflow.from_yaml` then `existing_safes()` round-trip detects them.
+Wall time:
 
-**Caveat discovered:** if the bbox spans more than one IW subswath, burst2safe
-errors out with `Products from swaths IW1 and IW2 do not overlap`. The fix is
-to either pass `swaths=['IW2']` (or whichever subswath your AOI lives in) or
-to keep the bbox inside one subswath. Worth noting in user docs / closing
-issue #80 wording.
+| stage | time |
+|---|---|
+| burst2safe download (2 SAFEs, ~770 MB each, IW2-only) | ~4 min |
+| COMPASS geocoding (10 CSLCs + 5 static layers) | ~4 min |
+| geometry stitching | ~12 s |
+| dolphin (phase linking + unwrap + timeseries + velocity) | ~2.7 min |
+| **total `sweets run`** | **~5.8 min** (after the SAFEs are downloaded) |
 
-Stages **not** smoke tested in this branch:
+Final outputs (under `dolphin/`):
 
-- COMPASS geocoding (existing code path, untouched).
-- `dolphin.workflows.displacement.run` end-to-end against the new layout
-  (untouched in dolphin, but the way we feed it CSLCs is new).
+- `interferograms/20210606_20210618.int.tif` + `.cor.tif` + `.mask.tif`
+- `unwrapped/20210606_20210618.unw.tif` + `.unw.conncomp.tif`
+- `timeseries/20210606_20210618.tif`, `velocity.tif`,
+  `reference_point.txt`, `warped_watermask.tif`
+- per-burst `linked_phase/`, `PS/`, masks etc.
 
-Both should "just work" given the existing pecos cache; the next session
-should run `sweets run --starting-step 2` against the smoke-tested config
-to confirm.
+**Bugs caught and fixed during the run** (all already on this branch):
+
+1. **`sardem` water-mask path was broken on macOS** in two ways at once:
+   - newer sardem hard-asserts `NASA_WATER` only supports `ENVI` output
+   - sardem's `_unzip_file` does `unzip_cmd.split(" ")`, which mangles
+     `~/Library/Application Support/sweets`
+   Fix: derive the water mask from a Copernicus DEM (`heights > 0` ⇒ land)
+   and ship a `~/.cache/sweets` cache dir with no spaces. See `dem.py` and
+   `utils.get_cache_dir`.
+
+2. **`COMPASS` still uses `np.string_` / `np.unicode_`**, removed in
+   numpy 2.0. Patched at the top of `_geocode_slcs.py` with a runtime
+   shim before `import compass`. **Real fix is to land this on
+   `scottstanie/COMPASS` and pin to it the same way we already pin
+   s1-reader.**
+
+3. **`_get_cfg_setup` built the static-layers path with a date suffix**
+   (`static_layers_<burst>_<date>.h5`), but COMPASS writes them per-burst
+   without a date. Strip the date before adding the prefix.
+
+4. **`dolphin.workflows.displacement` now requires
+   `input_options.subdataset`** for HDF5/NetCDF inputs. Default to
+   `/data/VV` in `_dolphin.build_displacement_config`.
+
+5. **`_existing_gslcs()` accepted empty 6-KB CSLC shells** as
+   "already done". COMPASS creates the shell early and only writes the
+   data later, so any crash mid-run leaves a file that *looks* like a
+   valid output. Reject anything below ~1 MB. This is exactly the
+   failure mode in issue #107.
+
+**Open caveat from yesterday's smoke test:** burst2safe rejects bboxes
+that span more than one IW subswath with `Products from swaths IW1 and
+IW2 do not overlap`. Workaround: pass `--swaths IW2` (or whichever
+subswath your AOI lives in).
 
 ## Smoke-test recipe (pecos)
 

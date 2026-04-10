@@ -154,7 +154,12 @@ class TestWorkflow:
         assert w.search.polarizations == ["HH"]
         assert w.search.bbox == bbox
         # NISAR subdataset path that gets handed to dolphin
-        assert w.search.hdf5_subdataset == "/science/LSAR/GSLC/grids/frequencyA/HH"
+        # `hdf5_subdataset()` would normally peek at a CMR result or a
+        # cached file to learn the actual frequency / pol; here we just
+        # check that the user's explicit choices feed straight through
+        # the construction (the resolver is exercised in the smoke test).
+        assert w.search.frequency == "A"
+        assert w.search.polarizations == ["HH"]
 
     def test_nisar_gslc_yaml_roundtrip(self, tmp_path, bbox):
         # `track`/`frame` are the user-facing names; the opera-utils field

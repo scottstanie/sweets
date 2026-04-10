@@ -444,7 +444,7 @@ class Workflow(YamlModel):
         CSLCs default to ``/data/VV``.
         """
         if isinstance(self.search, NisarGslcSearch):
-            return self.search.hdf5_subdataset
+            return self.search.hdf5_subdataset()
         return "/data/VV"
 
     @log_runtime

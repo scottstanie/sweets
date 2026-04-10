@@ -569,15 +569,23 @@ class NisarGslcSearch(YamlModel):
             " across repeat passes."
         ),
     )
-    frequency: Literal["A", "B"] = Field(
-        default="A",
-        description="NISAR frequency band: `A` (L-band, default) or `B`.",
+    frequency: Optional[Literal["A", "B"]] = Field(
+        default=None,
+        description=(
+            "NISAR frequency band: `A` (L-band primary) or `B`. If left as"
+            " the default (None), sweets peeks at the first matching CMR"
+            " hit and uses whichever frequency is actually present in the"
+            " HDF5. Different NISAR product releases ship different bands"
+            " (early BETA was A; recent PR products are B), so guessing is"
+            " usually wrong."
+        ),
     )
     polarizations: Optional[list[str]] = Field(
         None,
         description=(
-            "Polarizations to keep (e.g. ['HH']). If None, `run_download`"
-            " extracts every polarization present in each source file."
+            "Polarizations to keep (e.g. ['HH']). If left as the default"
+            " (None), sweets uses every polarization present under the"
+            " resolved frequency in the first matching CMR hit."
         ),
     )
     short_name: str = Field(
@@ -644,16 +652,17 @@ class NisarGslcSearch(YamlModel):
         assert self.bbox is not None
         return box(*self.bbox)
 
-    @property
     def hdf5_subdataset(self) -> str:
         """Return the dolphin `input_options.subdataset` path for this config.
 
         NISAR GSLCs put the complex data at
-        ``/science/LSAR/GSLC/grids/frequency{A,B}/{POL}``; the polarization
-        defaults to ``HH`` if the user didn't pin a list.
+        ``/science/LSAR/GSLC/grids/frequency{A,B}/{POL}``. If `frequency`
+        and `polarizations` are unset, this peeks at the first cached HDF5
+        in `out_dir` (or, if there isn't one yet, the first matching CMR
+        hit) to learn what's actually in the product.
         """
-        pol = (self.polarizations or ["HH"])[0]
-        return f"/science/LSAR/GSLC/grids/frequency{self.frequency}/{pol}"
+        freq, pols = self._resolve_frequency_and_pols()
+        return f"/science/LSAR/GSLC/grids/frequency{freq}/{pols[0]}"
 
     def summary(self) -> str:
         return (
@@ -662,11 +671,74 @@ class NisarGslcSearch(YamlModel):
             f"  Dates            : {self.start.date()} -> {self.end.date()}\n"
             f"  Track            : {self.track or 'any'}\n"
             f"  Frame            : {self.frame or 'any'}\n"
-            f"  Frequency        : {self.frequency}\n"
-            f"  Polarizations    : {self.polarizations or 'all'}\n"
+            f"  Frequency        : {self.frequency or 'auto'}\n"
+            f"  Polarizations    : {self.polarizations or 'auto'}\n"
             f"  CMR short_name   : {self.short_name}\n"
             f"  Output           : {self.out_dir}"
         )
+
+    def _resolve_frequency_and_pols(self) -> tuple[str, list[str]]:
+        """Pick the actual `frequency` + polarizations to feed dolphin / run_download.
+
+        Order of preference:
+
+        1. Already-downloaded HDF5 in ``out_dir`` — peek inside.
+        2. First CMR hit — open it remotely.
+
+        Returns the user's overrides where they make sense (e.g. they
+        asked for `HH` and the file does have it), otherwise falls back
+        to whichever frequency / polarization is actually present in
+        the HDF5. Logs a warning when the user-requested values don't
+        match what's available.
+        """
+        local = self.existing_files()
+        if local:
+            freq, pols = _peek_nisar_grid(local[0])
+        else:
+            from opera_utils.nisar import search
+
+            results = search(
+                bbox=tuple(self.aoi.bounds),  # type: ignore[arg-type]
+                relative_orbit_number=self.track,
+                track_frame_number=self.frame,
+                start_datetime=self.start,
+                end_datetime=self.end,
+                short_name=self.short_name,
+            )
+            if not results:
+                msg = (
+                    "No NISAR GSLC products found for the requested AOI /"
+                    " track / frame / dates. Cannot resolve frequency."
+                )
+                raise RuntimeError(msg)
+            with results[0]._open() as hf:
+                freq, pols = _peek_nisar_grid_from_handle(hf)
+        return self._reconcile(freq, pols)
+
+    def _reconcile(
+        self, available_freq: str, available_pols: list[str]
+    ) -> tuple[str, list[str]]:
+        """Reconcile user request against what's actually in the file."""
+        if self.frequency and self.frequency != available_freq:
+            logger.warning(
+                f"NISAR: requested frequency={self.frequency!r} but the"
+                f" product only has frequency{available_freq!r}; using"
+                f" frequency{available_freq!r}."
+            )
+        freq = available_freq
+        if self.polarizations:
+            kept = [p for p in self.polarizations if p in available_pols]
+            dropped = [p for p in self.polarizations if p not in available_pols]
+            if dropped:
+                logger.warning(
+                    f"NISAR: requested polarizations {dropped} not present"
+                    f" in product (available: {available_pols}); using"
+                    f" {kept or available_pols} instead."
+                )
+            pols = kept or available_pols
+        else:
+            pols = available_pols
+        return freq, pols
 
     @log_runtime
     def download(self) -> list[Path]:
@@ -676,6 +748,13 @@ class NisarGslcSearch(YamlModel):
         self.out_dir.mkdir(parents=True, exist_ok=True)
         logger.info(self.summary())
 
+        # Peek at the first matching product to learn the actual frequency
+        # + polarizations the file carries. Different NISAR releases pack
+        # different bands and pols, and run_download crashes if you ask
+        # for the wrong frequency.
+        freq, pols = self._resolve_frequency_and_pols()
+        logger.info(f"NISAR resolved: frequency={freq}, polarizations={pols}")
+
         bounds: tuple[float, float, float, float] = tuple(self.aoi.bounds)  # type: ignore[assignment]
         result = run_download(
             bbox=bounds,
@@ -683,8 +762,8 @@ class NisarGslcSearch(YamlModel):
             track_frame_number=self.frame,
             start_datetime=self.start,
             end_datetime=self.end,
-            frequency=self.frequency,
-            polarizations=self.polarizations,
+            frequency=freq,
+            polarizations=pols,
             short_name=self.short_name,
             num_workers=self.num_workers,
             output_dir=self.out_dir,
@@ -696,3 +775,33 @@ class NisarGslcSearch(YamlModel):
     def existing_files(self) -> list[Path]:
         """Return any NISAR GSLC HDF5s already present in `out_dir`."""
         return sorted(self.out_dir.glob("NISAR_L2_*GSLC*.h5"))
+
+
+def _peek_nisar_grid(h5path: Path) -> tuple[str, list[str]]:
+    """Open a NISAR GSLC HDF5 and return (frequency_letter, polarizations)."""
+    import h5py
+
+    with h5py.File(h5path, "r") as hf:
+        return _peek_nisar_grid_from_handle(hf)
+
+
+def _peek_nisar_grid_from_handle(hf) -> tuple[str, list[str]]:  # noqa: ANN001
+    """Inspect an open NISAR GSLC HDF5 file handle for grid layout."""
+    grids_path = "/science/LSAR/GSLC/grids"
+    if grids_path not in hf:
+        msg = f"NISAR HDF5 has no `{grids_path}` group"
+        raise RuntimeError(msg)
+    freq_groups = [k for k in hf[grids_path].keys() if k.startswith("frequency")]
+    if not freq_groups:
+        msg = f"NISAR HDF5 `{grids_path}` has no frequency subgroup"
+        raise RuntimeError(msg)
+    # Pick the first available frequency (filename order: A before B).
+    freq_groups.sort()
+    freq_path = f"{grids_path}/{freq_groups[0]}"
+    freq_letter = freq_groups[0].removeprefix("frequency")
+    pols = [
+        k
+        for k in hf[freq_path].keys()
+        if k in ("HH", "VV", "HV", "VH", "RH", "RV", "LH", "LV")
+    ]
+    return freq_letter, pols

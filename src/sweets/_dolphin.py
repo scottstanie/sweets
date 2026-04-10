@@ -103,8 +103,11 @@ class DolphinOptions(BaseModel):
         description="Run dolphin's timeseries inversion + velocity estimation.",
     )
     gpu_enabled: bool = Field(
-        default=False,
-        description="Enable GPU acceleration if dolphin can find a usable device.",
+        default=True,
+        description=(
+            "Enable GPU acceleration if dolphin can find a usable device."
+            " Harmless on machines without a GPU — dolphin falls back to CPU."
+        ),
     )
     threads_per_worker: int = Field(
         default=4,
@@ -132,13 +135,15 @@ def build_displacement_config(
     options: Optional[DolphinOptions] = None,
     mask_file: Optional[Path] = None,
     bounds: Optional[tuple[float, float, float, float]] = None,
+    subdataset: str = "/data/VV",
 ):
     """Build a :class:`DisplacementWorkflow` config from sweets options.
 
     Parameters
     ----------
     cslc_files
-        Geocoded SLC files (COMPASS HDF5 outputs).
+        Geocoded SLC files (COMPASS HDF5 outputs or OPERA CSLC HDF5s or
+        NISAR GSLC HDF5s).
     work_directory
         Where dolphin will write its scratch and output products.
     options
@@ -147,6 +152,11 @@ def build_displacement_config(
         Optional water/validity mask. Convention: 1 = good, 0 = bad, dtype uint8.
     bounds
         Optional crop bounds (left, bottom, right, top) in EPSG:4326.
+    subdataset
+        HDF5 dataset path for the complex SLC inside each input file.
+        Defaults to ``/data/VV`` (COMPASS / OPERA CSLC layout); callers
+        with NISAR GSLCs pass e.g.
+        ``/science/LSAR/GSLC/grids/frequencyA/HH``.
 
     Returns
     -------
@@ -182,16 +192,12 @@ def build_displacement_config(
 
     # Use model_validate so the nested dolphin sub-models accept dicts
     # rather than requiring us to import each one explicitly here.
-    # COMPASS CSLCs store the SLC at `/data/VV` (or `/data/HH` etc.). We
-    # default to VV since the rest of sweets is co-pol; users with other
-    # polarizations can override the field on the returned config before
-    # running.
     cfg = DisplacementWorkflow.model_validate(
         {
             "cslc_file_list": [Path(p).resolve() for p in cslc_files],
             "work_directory": work_directory,
             "mask_file": mask_file,
-            "input_options": {"subdataset": "/data/VV"},
+            "input_options": {"subdataset": subdataset},
             "worker_settings": {
                 "gpu_enabled": options.gpu_enabled,
                 "threads_per_worker": options.threads_per_worker,
@@ -230,13 +236,14 @@ def run_displacement(
     mask_file: Optional[Path] = None,
     bounds: Optional[tuple[float, float, float, float]] = None,
     config_yaml: Optional[Path] = None,
+    subdataset: str = "/data/VV",
 ) -> "OutputPaths":
     """Build the dolphin config and run the displacement workflow.
 
     Parameters
     ----------
     cslc_files
-        Geocoded SLCs from COMPASS.
+        Geocoded SLCs from COMPASS, OPERA, or NISAR.
     work_directory
         dolphin work / output directory.
     options
@@ -248,6 +255,9 @@ def run_displacement(
     config_yaml
         If given, the resolved dolphin config is dumped to this YAML path
         before running, for reproducibility.
+    subdataset
+        HDF5 dataset path for the complex SLC inside each input file;
+        forwarded to :func:`build_displacement_config`.
 
     Returns
     -------
@@ -263,6 +273,7 @@ def run_displacement(
         options=options,
         mask_file=mask_file,
         bounds=bounds,
+        subdataset=subdataset,
     )
     if config_yaml is not None:
         cfg.to_yaml(config_yaml)

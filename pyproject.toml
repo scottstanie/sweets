@@ -99,8 +99,14 @@ compass = { git = "https://github.com/scottstanie/COMPASS.git", branch = "develo
 # scottstanie/opera-utils@develop-scott carries the high-level
 # `create_tropo_corrections_for_stack` workflow + `search_tropo` CMR client
 # that the sweets tropo step builds on, plus the OPERA CSLC download
-# helpers used by the OperaCslcSearch source.
+# helpers used by the OperaCslcSearch source and the NISAR GSLC helpers
+# used by NisarGslcSearch.
 opera-utils = { git = "https://github.com/scottstanie/opera-utils.git", branch = "develop-scott" }
+# scottstanie/dolphin@develop-scott carries the YamlModel commented-yaml
+# fix for Union-of-submodels JSON schema, which unblocks the
+# `Workflow.search: BurstSearch | OperaCslcSearch | NisarGslcSearch`
+# discriminated union.
+dolphin = { git = "https://github.com/scottstanie/dolphin.git", branch = "develop-scott" }
 
 [tool.pixi.dependencies]
 python = ">=3.11"
@@ -112,10 +118,11 @@ isce3 = ">=0.24"
 gdal = "*"
 libgdal-netcdf = "*"
 # Pure-python deps mirrored from [project.dependencies] so the env solves
-# fully through conda when possible.
+# fully through conda when possible. (dolphin is intentionally NOT here —
+# it comes from scottstanie/dolphin@develop-scott via the pypi-dependencies
+# block above.)
 asf_search = "*"
 burst2safe = "*"
-dolphin = "*"
 h5py = ">=3.6"
 numpy = ">=1.25"
 pandas = "*"

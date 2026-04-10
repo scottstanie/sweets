@@ -1,4 +1,28 @@
-# Unreleased
+# Unreleased — v0.2 rewrite
+
+**Major changes**
+- **Burst-level downloads.** Sentinel-1 data is now fetched as just the bursts
+  that intersect the AOI via `burst2safe`, instead of full ~250x170 km frames.
+  Closes #23, #85, #88.
+- **dolphin end-to-end.** Phase linking, interferogram network selection,
+  stitching, unwrapping, timeseries inversion and velocity estimation are now
+  delegated to a single `dolphin.workflows.displacement.run` call. The
+  hand-rolled interferogram / stitch / unwrap orchestration was deleted.
+- **`tyro` CLI.** `sweets config`, `sweets run` and `sweets server` are now
+  defined with `tyro` instead of argparse, cutting ~200 lines and giving
+  proper rich help.
+- **pixi as the primary install.** `pyproject.toml` is reorganized so the
+  `[tool.pixi.*]` sections are the canonical environment definition; an
+  `environment.yml` synced from pixi is provided for non-pixi users.
+- **`s1-reader` fork pin.** sweets now installs s1-reader from
+  `scottstanie/s1-reader@develop-scott`, which has the numpy 2 polyfit fix.
+  Closes #132.
+
+**Removed**
+- `sweets.interferogram` (replaced by dolphin's interferogram network).
+- `sweets._missing_data`, `sweets.plotting`, `sweets._unzip` (no longer needed).
+- `scripts/prep_mintpy.py` (broken with the new layout; mintpy export is
+  TODO via dolphin's existing exporters).
 
 
 # [0.2.0](https://github.com/opera-adt/dolphin/compare/v0.2.0...v0.3.0) - 2023-08-23

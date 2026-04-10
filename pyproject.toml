@@ -2,6 +2,21 @@
 requires = ["setuptools>=64.0", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
+# ----------------------------------------------------------------------------
+# Installation
+#
+# Recommended: pixi (https://pixi.sh). The pixi config below is the canonical
+# environment definition; it pins the conda-forge versions of compass, isce3,
+# gdal etc. that cannot ship on PyPI, and points s1-reader at the maintained
+# fork at scottstanie/s1-reader@develop-scott.
+#
+#     pixi install              # solve + create the default env
+#     pixi run sweets --help    # run inside the env
+#
+# For users who prefer plain conda/mamba, an environment.yml synced from this
+# pyproject is provided at the repo root.
+# ----------------------------------------------------------------------------
+
 [project]
 name = "sweets"
 description = "Workflows for generating surface displacement maps using InSAR"
@@ -9,42 +24,37 @@ readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.11"
 
 classifiers = [
-  "Development Status :: 2 - Pre-Alpha",
+  "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
   "Programming Language :: Python :: 3",
   "License = file : LICENSE",
   "Operating System :: OS Independent",
 ]
 
-# The version will be written into a version.py upon install, auto-generated
-# see section: setuptools_scm
-# https://setuptools.pypa.io/en/latest/userguide/pyproject_config.html#dynamic-metadata
+# The version is written into _version.py at install time by setuptools_scm.
 dynamic = ["version"]
 
-
+# These are the pip-installable runtime deps. Several heavy native deps
+# (compass, isce3, gdal, libgdal-netcdf) are conda-only and live in
+# [tool.pixi.dependencies] below.
 dependencies = [
-  "dask",
+  "burst2safe",
   "dolphin",
-  # Not pypi-installable
-  # "compass",
-  # "gdal",
-  # "libgdal-netcdf",
-  # "isce3",
   "h5py",
   "numpy",
-  "pandas",
-  "pyproj",
-  "requests",
-  "rich",
-  "shapely",
-  "geopandas",
-  "rioxarray",
   "opera-utils",
-  "pydantic",
+  "pandas",
+  "pydantic>=2.1",
+  "pyproj",
   "python-dateutil",
   "rasterio",
+  "requests",
+  "rich",
+  "rioxarray",
   "sardem",
   "sentineleof",
+  "shapely",
+  "tyro",
 ]
 
 [project.optional-dependencies]
@@ -58,13 +68,17 @@ web = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/scottstanie/sweets"
-"Bug Tracker" = "https://github.com/scottstanie/sweets/issues"
+Homepage = "https://github.com/isce-framework/sweets"
+"Bug Tracker" = "https://github.com/isce-framework/sweets/issues"
 
 # Entry points for the command line interface
 [project.scripts]
 sweets = "sweets.cli:main"
 
+
+# ----------------------------------------------------------------------------
+# pixi: canonical environment definition
+# ----------------------------------------------------------------------------
 
 [tool.pixi.project]
 channels = ["conda-forge"]
@@ -72,38 +86,45 @@ platforms = ["osx-arm64", "linux-64"]
 
 [tool.pixi.pypi-dependencies]
 sweets = { path = ".", editable = true }
+# Use the maintained fork. Upstream isce-framework/s1-reader has a numpy 2
+# incompat (polyfit scalar regression, see sweets#132) and is unmaintained.
+s1reader = { git = "https://github.com/scottstanie/s1-reader.git", branch = "develop-scott" }
 
 [tool.pixi.dependencies]
-python = ">=3.8"
+python = ">=3.11"
 pip = ">=21.3"
-wget = "*"
-git = "*"
-dask = ">=2022.6.0"
-dolphin = "*"
-gdal = "*"
+# Heavy native / conda-only deps
 compass = ">=0.4.1"
-libgdal-netcdf = "*"
 isce3 = ">=0.24"
+gdal = "*"
+libgdal-netcdf = "*"
+# Pure-python deps mirrored from [project.dependencies] so the env solves
+# fully through conda when possible.
+burst2safe = "*"
+dolphin = "*"
 h5py = ">=3.6"
 numpy = ">=1.25"
-pandas = "*"
-pyproj = ">=3.2"
-requests = ">=2.10"
-rich = ">=12.0"
-shapely = ">=1.8"
-geopandas = "*"
-rioxarray = "*"
 opera-utils = ">=0.24"
+pandas = "*"
 pydantic = ">=2.1"
+pyproj = ">=3.2"
 python-dateutil = "*"
 rasterio = "*"
+requests = ">=2.10"
+rich = ">=12.0"
+rioxarray = "*"
 sardem = "*"
 sentineleof = "*"
+shapely = ">=2.0"
+tyro = "*"
 
 [tool.pixi.tasks]
 test = "pytest"
-install = { depends-on = "pre-commit_install" }
+install = { depends-on = ["pre-commit_install"] }
 pre-commit_install = "pre-commit install"
+# Regenerate environment.yml from the pixi solve so non-pixi users have a
+# current conda env spec to fall back on.
+export-env = "pixi project export conda-environment > environment.yml"
 
 [tool.pixi.feature.test.dependencies]
 pytest = ">=8.3.5,<9"
@@ -127,11 +148,11 @@ websockets = "*"
 titiler-core = "*"
 
 [tool.pixi.environments]
-default = ["test", "plotting"]
-test = ["test"]
-plotting = ["plotting"]
-web = ["web", "plotting"]
-minimal = []
+default = { features = ["test", "plotting"], solve-group = "default" }
+test = { features = ["test"], solve-group = "default" }
+plotting = { features = ["plotting"], solve-group = "default" }
+web = { features = ["web", "plotting"], solve-group = "default" }
+minimal = { features = [], solve-group = "default" }
 
 [tool.setuptools_scm]
 # https://github.com/pypa/setuptools_scm#configuration-parameters

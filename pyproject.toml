@@ -38,10 +38,14 @@ dynamic = ["version"]
 # (compass, isce3, gdal, libgdal-netcdf) are conda-only and live in
 # [tool.pixi.dependencies] below.
 dependencies = [
+  "asf_search",
   "burst2safe",
   "dolphin",
   "h5py",
   "numpy",
+  # opera-utils comes from scottstanie/opera-utils@develop-scott via the
+  # pixi pypi-dependencies block (carries the tropo workflow); a permissive
+  # version pin here is fine for non-pixi installs.
   "opera-utils",
   "pandas",
   "pydantic>=2.1",
@@ -92,23 +96,28 @@ sweets = { path = ".", editable = true }
 # in numpy 2. Both forks restore numpy-2 compatibility on develop-scott.
 s1reader = { git = "https://github.com/scottstanie/s1-reader.git", branch = "develop-scott" }
 compass = { git = "https://github.com/scottstanie/COMPASS.git", branch = "develop-scott" }
+# scottstanie/opera-utils@develop-scott carries the high-level
+# `create_tropo_corrections_for_stack` workflow + `search_tropo` CMR client
+# that the sweets tropo step builds on, plus the OPERA CSLC download
+# helpers used by the OperaCslcSearch source.
+opera-utils = { git = "https://github.com/scottstanie/opera-utils.git", branch = "develop-scott" }
 
 [tool.pixi.dependencies]
 python = ">=3.11"
 pip = ">=21.3"
-# Heavy native / conda-only deps. (compass is intentionally NOT here — it
-# comes from scottstanie/COMPASS via [tool.pixi.pypi-dependencies] above so
-# we get the numpy 2 fix.)
+# Heavy native / conda-only deps. (compass and opera-utils are intentionally
+# NOT here — they come from scottstanie/<repo> via [tool.pixi.pypi-dependencies]
+# above so we get the numpy 2 fixes and the new tropo workflow.)
 isce3 = ">=0.24"
 gdal = "*"
 libgdal-netcdf = "*"
 # Pure-python deps mirrored from [project.dependencies] so the env solves
 # fully through conda when possible.
+asf_search = "*"
 burst2safe = "*"
 dolphin = "*"
 h5py = ">=3.6"
 numpy = ">=1.25"
-opera-utils = ">=0.24"
 pandas = "*"
 pydantic = ">=2.1"
 pyproj = ">=3.2"

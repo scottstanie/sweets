@@ -25,9 +25,10 @@ so any sweets code path that triggers tropo gets the backend automatically.
 from __future__ import annotations
 
 import re
+import warnings
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 
 import h5py
 import numpy as np
@@ -221,52 +222,142 @@ def _parse_tropo_filename(p: Path) -> Optional[datetime]:
     return datetime.strptime(m.group(1), "%Y%m%dT%H%M%S")
 
 
-def _index_tropo_files_by_date(tropo_files: list[Path]) -> dict[str, Path]:
-    """Build a `YYYYMMDD -> tropo_correction.tif` lookup."""
-    out: dict[str, Path] = {}
+def _group_tropo_files_by_date(tropo_files: list[Path]) -> dict[str, list[Path]]:
+    """Bucket per-burst tropo correction rasters under their YYYYMMDD.
+
+    `opera_utils.tropo.create_tropo_corrections_for_stack` writes one
+    correction GeoTIFF per CSLC sensing time — interpolated from the
+    6-hourly OPERA L4 TROPO-ZENITH products down to the exact time.
+    For an OPERA burst stack that gives ~9 files per date (one per
+    burst), each ~1-3 seconds apart. Dolphin collapses these back to
+    a single stitched raster per date pair, so on the sweets side we
+    average the per-burst tropo rasters into a single "per-date"
+    correction before applying.
+    """
+    out: dict[str, list[Path]] = {}
     for p in tropo_files:
         dt = _parse_tropo_filename(p)
         if dt is None:
             continue
-        out[dt.strftime("%Y%m%d")] = p
+        out.setdefault(dt.strftime("%Y%m%d"), []).append(p)
     return out
 
 
-def _ifg_dates(ifg_path: Path) -> Optional[tuple[str, str]]:
-    """Pull the (date1, date2) pair out of a `<date1>_<date2>.unw.tif` name."""
-    m = re.match(r"(\d{8})_(\d{8})", ifg_path.name)
+def _mean_tropo_on_grid(tropo_files: list[Path], target) -> np.ndarray:  # noqa: ANN001
+    """Reproject a list of tropo rasters onto `target` and return the mean.
+
+    `target` is an xarray DataArray that carries the desired grid + CRS
+    (usually the dolphin interferogram we're about to correct). Pixels
+    where any input is nodata are carried as NaN in the mean.
+    """
+    stack: list[np.ndarray] = []
+    for p in tropo_files:
+        da = rxr.open_rasterio(p, masked=True).squeeze(drop=True)
+        matched = da.rio.reproject_match(target)
+        stack.append(np.asarray(matched.values, dtype=np.float32))
+    return np.nanmean(np.stack(stack, axis=0), axis=0)
+
+
+def _ifg_dates(path: Path) -> Optional[tuple[str, str]]:
+    """Pull the (date1, date2) pair out of a `<date1>_<date2>*.tif` name."""
+    m = re.match(r"(\d{8})_(\d{8})", path.name)
     if not m:
         return None
     return m.group(1), m.group(2)
 
 
+TargetUnits = Literal["radians", "meters"]
+
+
+def _apply_one_pair(
+    target_path: Path,
+    tropo_by_date: dict[str, list[Path]],
+    output_path: Path,
+    scale: float,
+) -> Optional[Path]:
+    """Subtract the per-date differential tropo from one raster.
+
+    ``scale`` is applied to the metres-of-LOS-delay difference before
+    subtraction. Use ``4*pi/wavelength`` for radians-of-phase targets
+    (unwrapped ifgs) and ``1.0`` for metres-of-displacement targets
+    (dolphin timeseries).
+    """
+    pair = _ifg_dates(target_path)
+    if pair is None:
+        logger.warning(f"Skipping {target_path.name}: no date pair in filename")
+        return None
+    d1, d2 = pair
+    if d1 not in tropo_by_date or d2 not in tropo_by_date:
+        missing = d1 if d1 not in tropo_by_date else d2
+        logger.warning(f"Skipping {target_path.name}: no tropo for {missing}")
+        return None
+
+    with rasterio.open(target_path) as src:
+        arr = src.read(1)
+        profile = src.profile.copy()
+
+    target = rxr.open_rasterio(target_path, masked=True).squeeze(drop=True)
+    # `nanmean` warns on all-NaN slices for pixels the tropo grid doesn't
+    # cover; the resulting NaN is what we want, so the warning is noise.
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", "Mean of empty slice")
+        t1_mean = _mean_tropo_on_grid(tropo_by_date[d1], target)
+        t2_mean = _mean_tropo_on_grid(tropo_by_date[d2], target)
+    diff_m = t2_mean - t1_mean
+
+    corrected = arr.astype(np.float32) - (scale * diff_m).astype(np.float32)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    profile.update(dtype="float32", count=1, compress="deflate")
+    with rasterio.open(output_path, "w", **profile) as dst:
+        dst.write(corrected, 1)
+    logger.info(f"Wrote {output_path.name}")
+    return output_path
+
+
 @log_runtime
-def apply_tropo_to_unwrapped(
-    unwrapped_files: list[Path],
+def apply_tropo_to_pairs(
+    target_files: list[Path],
     tropo_files: list[Path],
     output_dir: Path,
+    units: TargetUnits,
+    suffix: str = ".tropo_corrected.tif",
     wavelength: float = S1_WAVELENGTH_M,
 ) -> list[Path]:
-    """Subtract differential tropo phase from each unwrapped interferogram.
+    """Subtract differential tropo from each date-pair raster.
 
-    For an interferogram pair (date1, date2):
+    For each pair (date1, date2):
 
-        corrected = unwrapped - (4*pi/wavelength) * (tropo[date2] - tropo[date1])
+        corrected = original - scale * (mean(tropo[d2]) - mean(tropo[d1]))
 
-    The tropo correction GeoTIFFs are stored in metres of LOS displacement;
-    multiply by ``4*pi/wavelength`` to convert to radians of phase. The
-    sign matches dolphin's unwrap convention (positive = range increase).
+    where ``scale`` depends on ``units``:
+
+    - ``radians``: ``4*pi/wavelength`` — converts metres of LOS delay
+      to radians of phase for unwrapped interferograms.
+    - ``meters``: ``1.0`` — the dolphin timeseries rasters are already in
+      metres of LOS displacement after the radians-to-metres conversion
+      driven by the config wavelength.
+
+    ``mean(tropo[d])`` is the per-burst average of tropo correction rasters
+    tagged with date ``d`` (see :func:`_group_tropo_files_by_date`): an
+    OPERA burst stack produces ~9 correction rasters per date (one per
+    burst sensing time), which we average down before applying so the
+    result matches dolphin's per-date-pair stitched output grid.
 
     Parameters
     ----------
-    unwrapped_files
-        Paths to dolphin-produced ``<date1>_<date2>.unw.tif`` rasters.
+    target_files
+        Rasters to correct. Expected to be named ``<date1>_<date2>*.tif``.
     tropo_files
-        Paths to ``tropo_correction_<dt>.tif`` rasters from
+        Paths to ``tropo_correction_<dt>.tif`` rasters produced by
         :func:`create_tropo_corrections`.
     output_dir
-        Where corrected unwrapped phase rasters will be written
-        (filename suffix ``.tropo_corrected.unw.tif``).
+        Where corrected rasters will be written.
+    units
+        Units of ``target_files`` — either ``"radians"`` (phase) or
+        ``"meters"`` (displacement).
+    suffix
+        Suffix appended to ``<date1>_<date2>`` to form the output name.
     wavelength
         Radar carrier wavelength in metres. Defaults to S1 C-band.
 
@@ -279,69 +370,52 @@ def apply_tropo_to_unwrapped(
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    by_date = _index_tropo_files_by_date(list(tropo_files))
-    if not by_date:
+    tropo_by_date = _group_tropo_files_by_date(list(tropo_files))
+    if not tropo_by_date:
         msg = f"No tropo correction files found in {tropo_files!r}"
         raise ValueError(msg)
 
-    factor = 4.0 * np.pi / wavelength
+    scale = (4.0 * np.pi / wavelength) if units == "radians" else 1.0
     written: list[Path] = []
-    for unw in sorted(unwrapped_files):
-        pair = _ifg_dates(unw)
+    for src_path in sorted(target_files):
+        pair = _ifg_dates(src_path)
         if pair is None:
-            logger.warning(f"Skipping {unw.name}: no date pair in filename")
             continue
-        d1, d2 = pair
-        if d1 not in by_date or d2 not in by_date:
-            logger.warning(
-                f"Skipping {unw.name}: no tropo for"
-                f" {d1 if d1 not in by_date else d2}"
-            )
-            continue
-
-        with rasterio.open(unw) as src:
-            unw_arr = src.read(1)
-            profile = src.profile.copy()
-
-        # Reproject + resample tropo rasters to match the unwrapped grid.
-        target = rxr.open_rasterio(unw, masked=True).squeeze(drop=True)
-        t1 = rxr.open_rasterio(by_date[d1], masked=True).squeeze(drop=True)
-        t2 = rxr.open_rasterio(by_date[d2], masked=True).squeeze(drop=True)
-        t1_match = t1.rio.reproject_match(target)
-        t2_match = t2.rio.reproject_match(target)
-        diff_m = (t2_match - t1_match).values
-
-        corrected = unw_arr.astype(np.float32) - (factor * diff_m).astype(np.float32)
-
-        out = output_dir / f"{d1}_{d2}.tropo_corrected.unw.tif"
-        profile.update(dtype="float32", count=1, compress="deflate")
-        with rasterio.open(out, "w", **profile) as dst:
-            dst.write(corrected, 1)
-        written.append(out)
-        logger.info(f"Wrote {out.name}")
-
+        out_path = output_dir / f"{pair[0]}_{pair[1]}{suffix}"
+        result = _apply_one_pair(src_path, tropo_by_date, out_path, scale)
+        if result is not None:
+            written.append(result)
     return written
 
 
 @log_runtime
 def run_tropo_correction(
     slc_files: list[Path],
-    unwrapped_files: list[Path],
     dem_path: Path,
     incidence_angle_path: Path,
-    output_dir: Path,
+    dolphin_work_dir: Path,
     options: Optional[TropoOptions] = None,
     wavelength: float = S1_WAVELENGTH_M,
 ) -> list[Path]:
-    """Build tropo corrections + subtract them from dolphin's unwrapped phases.
+    """Build tropo corrections + apply to dolphin's unwrapped and timeseries.
 
-    See :func:`create_tropo_corrections` and :func:`apply_tropo_to_unwrapped`
-    for the underlying steps.
+    Runs :func:`create_tropo_corrections` to produce the per-CSLC tropo
+    rasters, then applies the differential correction to every
+    ``<date1>_<date2>*.tif`` raster it finds under ``dolphin_work_dir``:
+
+    - ``unwrapped/<pair>.unw.tif`` (the unwrapped interferogram)
+    - ``timeseries/<pair>.tif`` (the post-inversion per-pair timeseries
+      raster, when dolphin has produced one — for single-pair stacks
+      this is just the unwrapped pair referenced to a point)
+
+    Corrected outputs are written to ``<dolphin_work_dir>/tropo_corrected/``
+    with filenames ``<pair>.unw.tropo_corrected.tif`` and
+    ``<pair>.timeseries.tropo_corrected.tif`` respectively.
     """
     options = options or TropoOptions()
-    output_dir = Path(output_dir).resolve()
-    tropo_corr_dir = output_dir / "tropo"
-    corrected_dir = output_dir / "tropo_corrected"
+    dolphin_work_dir = Path(dolphin_work_dir).resolve()
+    tropo_corr_dir = dolphin_work_dir / "tropo"
+    corrected_dir = dolphin_work_dir / "tropo_corrected"
 
     tropo_files = create_tropo_corrections(
         slc_files=slc_files,
@@ -351,9 +425,45 @@ def run_tropo_correction(
         options=options,
     )
 
-    return apply_tropo_to_unwrapped(
-        unwrapped_files=unwrapped_files,
-        tropo_files=tropo_files,
-        output_dir=corrected_dir,
-        wavelength=wavelength,
+    written: list[Path] = []
+
+    # Apply to unwrapped interferograms (radians of phase).
+    unwrapped_dir = dolphin_work_dir / "unwrapped"
+    unw_files = sorted(p for p in unwrapped_dir.glob("*.unw.tif"))
+    if unw_files:
+        written.extend(
+            apply_tropo_to_pairs(
+                target_files=unw_files,
+                tropo_files=tropo_files,
+                output_dir=corrected_dir,
+                units="radians",
+                suffix=".unw.tropo_corrected.tif",
+                wavelength=wavelength,
+            )
+        )
+
+    # Apply to the per-pair timeseries rasters (metres of LOS displacement,
+    # post inversion + radians-to-metres conversion via wavelength). Single-
+    # pair stacks also get one `<d1>_<d2>.tif` here.
+    timeseries_dir = dolphin_work_dir / "timeseries"
+    ts_files = sorted(
+        p for p in timeseries_dir.glob("[0-9]*_[0-9]*.tif") if _ifg_dates(p) is not None
     )
+    if ts_files:
+        written.extend(
+            apply_tropo_to_pairs(
+                target_files=ts_files,
+                tropo_files=tropo_files,
+                output_dir=corrected_dir,
+                units="meters",
+                suffix=".timeseries.tropo_corrected.tif",
+                wavelength=wavelength,
+            )
+        )
+
+    if not written:
+        logger.warning(
+            "Tropo correction: no unwrapped or timeseries pair rasters found"
+            f" under {dolphin_work_dir}; nothing applied."
+        )
+    return written

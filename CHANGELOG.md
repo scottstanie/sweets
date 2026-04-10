@@ -4,20 +4,35 @@
 - **Burst-level downloads.** Sentinel-1 data is now fetched as just the bursts
   that intersect the AOI via `burst2safe`, instead of full ~250x170 km frames.
   Closes #23, #85, #88.
+- **OPERA CSLC source.** A second SLC source `OperaCslcSearch` skips
+  burst2safe + COMPASS entirely and pulls pre-made OPERA CSLC HDF5s
+  (and the matching CSLC-STATIC layers) directly from ASF DAAC. Pick
+  it via `sweets config --source opera-cslc`. Locked to OPERA's 5 m × 10 m
+  posting; great for CONUS where OPERA has produced for the AOI.
+  `Workflow.search` is a `Union[BurstSearch, OperaCslcSearch]`
+  discriminated by a `kind` field; existing configs without a `kind`
+  default to `safe` for backwards compat.
+- **Tropospheric correction (opt-in).** New `--do-tropo` flag wires the
+  OPERA L4 TROPO-ZENITH workflow from
+  `opera_utils.tropo.create_tropo_corrections_for_stack` into a post-step
+  that runs after dolphin produces unwrapped phase. Outputs land at
+  `dolphin/tropo/tropo_correction_<dt>.tif` and `dolphin/tropo_corrected/<pair>.tropo_corrected.unw.tif`.
 - **dolphin end-to-end.** Phase linking, interferogram network selection,
   stitching, unwrapping, timeseries inversion and velocity estimation are now
   delegated to a single `dolphin.workflows.displacement.run` call. The
   hand-rolled interferogram / stitch / unwrap orchestration was deleted.
 - **`tyro` CLI.** `sweets config`, `sweets run` and `sweets server` are now
   defined with `tyro` instead of argparse, cutting ~200 lines and giving
-  proper rich help.
+  proper rich help. `sweets run <config_file>` is now positional.
 - **pixi as the primary install.** `pyproject.toml` is reorganized so the
   `[tool.pixi.*]` sections are the canonical environment definition; an
   `environment.yml` synced from pixi is provided for non-pixi users.
-- **`s1-reader` and `COMPASS` fork pins.** sweets now installs both
-  s1-reader and COMPASS from `scottstanie/<repo>@develop-scott`, which
-  carry numpy 2 fixes (polyfit scalar in s1-reader,
-  `np.string_`/`np.unicode_` removed in COMPASS). Closes #132.
+- **`s1-reader`, `COMPASS` and `opera-utils` fork pins.** sweets now
+  installs all three from `scottstanie/<repo>@develop-scott`, which carry
+  numpy 2 fixes (polyfit scalar in s1-reader, `np.string_`/`np.unicode_`
+  in COMPASS), the new tropo workflow / `search_tropo` CMR client in
+  opera-utils, and a fix for the GDT_Float16 GTIFF_KWARGS that crashed
+  rasterio readers in `apply_tropo`. Closes #132.
 
 **Removed**
 - `sweets.interferogram` (replaced by dolphin's interferogram network).

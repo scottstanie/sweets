@@ -14,9 +14,10 @@
 - **pixi as the primary install.** `pyproject.toml` is reorganized so the
   `[tool.pixi.*]` sections are the canonical environment definition; an
   `environment.yml` synced from pixi is provided for non-pixi users.
-- **`s1-reader` fork pin.** sweets now installs s1-reader from
-  `scottstanie/s1-reader@develop-scott`, which has the numpy 2 polyfit fix.
-  Closes #132.
+- **`s1-reader` and `COMPASS` fork pins.** sweets now installs both
+  s1-reader and COMPASS from `scottstanie/<repo>@develop-scott`, which
+  carry numpy 2 fixes (polyfit scalar in s1-reader,
+  `np.string_`/`np.unicode_` removed in COMPASS). Closes #132.
 
 **Removed**
 - `sweets.interferogram` (replaced by dolphin's interferogram network).

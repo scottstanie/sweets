@@ -76,13 +76,9 @@ loose, and where to look next.
   dolphin, but Scott himself maintains upstream dolphin, so sweets pins
   upstream `dolphin` for now. If you need an unreleased dolphin feature, swap
   in `dolphin = { git = "...", branch = "..." }` under `[tool.pixi.pypi-dependencies]`.
-- **Land a real COMPASS numpy 2 fix.** I added a runtime monkey-patch to
-  `_geocode_slcs.py` to keep the smoke test moving. The proper fix is to
-  PR `np.string_` → `np.bytes_` and `np.unicode_` → `np.str_` against
-  `scottstanie/COMPASS` (~64 occurrences across `s1_geocode_*.py` etc.),
-  cut a `develop-scott` branch, and pin sweets to it via
-  `[tool.pixi.pypi-dependencies]` like we already do for s1-reader. Then
-  drop the shim from `_geocode_slcs.py`.
+- **Touch upstream `opera-adt/COMPASS`.** All COMPASS fixes landed on the
+  personal fork `scottstanie/COMPASS@develop-scott`; merging them upstream
+  is left to whoever is talking to OPERA.
 - **Touch the COMPASS / `_geocode_slcs.py` integration.** Geocoding still uses
   COMPASS; the hand-rolled config-file shuffling in `_geocode_slcs.py` is the
   same as on main. If we want to drop COMPASS in favor of an `isce3.geocode_slc`
@@ -128,10 +124,12 @@ Final outputs (under `dolphin/`):
    `utils.get_cache_dir`.
 
 2. **`COMPASS` still uses `np.string_` / `np.unicode_`**, removed in
-   numpy 2.0. Patched at the top of `_geocode_slcs.py` with a runtime
-   shim before `import compass`. **Real fix is to land this on
-   `scottstanie/COMPASS` and pin to it the same way we already pin
-   s1-reader.**
+   numpy 2.0. Fixed in
+   [`scottstanie/COMPASS@develop-scott`](https://github.com/scottstanie/COMPASS/tree/develop-scott)
+   (commit `a91a9aa`, 64 sites across `s1_geocode_slc.py`,
+   `s1_geocode_metadata.py`, `h5_helpers.py`); sweets pins that branch via
+   `[tool.pixi.pypi-dependencies]`. Verified locally that COMPASS now
+   produces full ~273 MB CSLC HDF5s with byte-string attributes.
 
 3. **`_get_cfg_setup` built the static-layers path with a date suffix**
    (`static_layers_<burst>_<date>.h5`), but COMPASS writes them per-burst

@@ -86,15 +86,19 @@ platforms = ["osx-arm64", "linux-64"]
 
 [tool.pixi.pypi-dependencies]
 sweets = { path = ".", editable = true }
-# Use the maintained fork. Upstream isce-framework/s1-reader has a numpy 2
-# incompat (polyfit scalar regression, see sweets#132) and is unmaintained.
+# Use the maintained forks. Upstream isce-framework/s1-reader has a numpy 2
+# incompat (polyfit scalar regression, see sweets#132); upstream
+# opera-adt/COMPASS still uses np.string_ / np.unicode_ which were removed
+# in numpy 2. Both forks restore numpy-2 compatibility on develop-scott.
 s1reader = { git = "https://github.com/scottstanie/s1-reader.git", branch = "develop-scott" }
+compass = { git = "https://github.com/scottstanie/COMPASS.git", branch = "develop-scott" }
 
 [tool.pixi.dependencies]
 python = ">=3.11"
 pip = ">=21.3"
-# Heavy native / conda-only deps
-compass = ">=0.4.1"
+# Heavy native / conda-only deps. (compass is intentionally NOT here — it
+# comes from scottstanie/COMPASS via [tool.pixi.pypi-dependencies] above so
+# we get the numpy 2 fix.)
 isce3 = ">=0.24"
 gdal = "*"
 libgdal-netcdf = "*"

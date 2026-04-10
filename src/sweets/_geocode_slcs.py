@@ -5,25 +5,14 @@ from os import fspath
 from pathlib import Path
 from typing import List, Literal, Optional, Tuple
 
-import numpy as np
+import compass.s1_geocode_slc
+import compass.s1_static_layers
+import journal
+from compass import s1_geocode_stack
+from compass.utils.geo_runconfig import GeoRunConfig
 
-# COMPASS still uses np.string_ / np.unicode_ aliases that were removed in
-# numpy 2.0. Restore them as thin shims before importing the package, so we
-# don't need a parallel COMPASS fork just for this. TODO: drop once compass
-# upstream is fixed and pinned (see REVIVAL.md).
-if not hasattr(np, "string_"):
-    np.string_ = np.bytes_  # type: ignore[attr-defined]
-if not hasattr(np, "unicode_"):
-    np.unicode_ = np.str_  # type: ignore[attr-defined]
-
-import compass.s1_geocode_slc  # noqa: E402
-import compass.s1_static_layers  # noqa: E402
-import journal  # noqa: E402
-from compass import s1_geocode_stack  # noqa: E402
-from compass.utils.geo_runconfig import GeoRunConfig  # noqa: E402
-
-from ._log import get_log  # noqa: E402
-from ._types import Filename  # noqa: E402
+from ._log import get_log
+from ._types import Filename
 
 logger = get_log(__name__)
 

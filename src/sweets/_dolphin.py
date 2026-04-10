@@ -182,11 +182,16 @@ def build_displacement_config(
 
     # Use model_validate so the nested dolphin sub-models accept dicts
     # rather than requiring us to import each one explicitly here.
+    # COMPASS CSLCs store the SLC at `/data/VV` (or `/data/HH` etc.). We
+    # default to VV since the rest of sweets is co-pol; users with other
+    # polarizations can override the field on the returned config before
+    # running.
     cfg = DisplacementWorkflow.model_validate(
         {
             "cslc_file_list": [Path(p).resolve() for p in cslc_files],
             "work_directory": work_directory,
             "mask_file": mask_file,
+            "input_options": {"subdataset": "/data/VV"},
             "worker_settings": {
                 "gpu_enabled": options.gpu_enabled,
                 "threads_per_worker": options.threads_per_worker,

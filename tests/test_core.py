@@ -1,115 +1,104 @@
+"""Lightweight tests for the Workflow config object.
+
+These avoid touching ASF, COMPASS or dolphin — they exercise validation,
+YAML round-trip, and the bbox/wkt cross-fill logic.
+"""
+
+from __future__ import annotations
+
 from pathlib import Path
-from typing import List
 
 import pytest
 from shapely import wkt
 
 from sweets.core import Workflow
-from sweets.download import ASFQuery
+from sweets.download import BurstSearch
+
+
+@pytest.fixture
+def bbox() -> tuple[float, float, float, float]:
+    return (-102.2, 32.15, -102.1, 32.22)
+
+
+@pytest.fixture
+def search_kwargs() -> dict:
+    return {
+        "start": "2022-12-15",
+        "end": "2022-12-29",
+        "track": 78,
+    }
 
 
 class TestWorkflow:
-    @pytest.fixture(scope="class")
-    def bbox(self) -> List[float]:
-        return [-102.2, 32.15, -102.1, 32.22]
-
-    def test_workflow_construct(self, tmp_path, bbox):
-        start, end, track = "2022-12-15", "2022-12-29", 78
-        n_workers, tpw = 1, 16
-
+    def test_construct_from_dict(self, tmp_path, bbox, search_kwargs):
         w = Workflow(
-            asf_query=dict(
-                start=start,
-                end=end,
-                relativeOrbit=track,
-                out_dir="data",
-            ),
             bbox=bbox,
-            n_workers=n_workers,
-            threads_per_worker=tpw,
-            max_bandwidth=1,
-            orbit_dir="orbits",
+            search={**search_kwargs, "out_dir": "data"},
+            n_workers=1,
+            threads_per_worker=16,
         )
         outfile = tmp_path / "config.yaml"
         w.to_yaml(outfile, with_comments=True)
         w2 = Workflow.from_yaml(outfile)
-        assert w.model_dump() == w2.model_dump()  # computed fields affect equality
+        assert w.model_dump() == w2.model_dump()
 
-    def test_workflow_construct_model(self, bbox):
-        start, end, track = "2022-12-15", "2022-12-29", 78
-        w = Workflow(
-            asf_query=ASFQuery(
-                start=start, end=end, relativeOrbit=track, out_dir="data", bbox=bbox
-            ),
-        )
-        assert w.bbox == tuple(bbox)
+    def test_construct_from_burst_search_instance(self, bbox, search_kwargs):
+        search = BurstSearch(bbox=bbox, **search_kwargs)
+        w = Workflow(search=search, bbox=bbox)
+        assert w.bbox == bbox
+        assert w.search.track == 78
 
-    def test_workflow_bbox_wkt(self, tmp_path):
-        start, end, track = "2022-12-15", "2022-12-29", 78
+    def test_bbox_wkt_cross_fill(self, tmp_path, search_kwargs):
         wkt_str = "POLYGON((-10.0 30.0,-9.0 30.0,-9.0 31.0,-10.0 31.0,-10.0 30.0))"
         loaded_wkt = wkt.loads(wkt_str)
-
-        kwargs = dict(
-            asf_query=dict(
-                start=start,
-                end=end,
-                relativeOrbit=track,
-            ),
-        )
-        wkt_bbox = wkt.loads(
-            "POLYGON ((-9. 30.0, -9.0 31.0, -10.0 31.0, -10.0 30.0, -9.0 30.0))"
-        )
         expected_bbox = (-10, 30, -9, 31)
-        w = Workflow(
-            bbox=expected_bbox,
-            **kwargs,
-        )
-        assert w.bbox == expected_bbox
-        assert _iou(wkt.loads(w.wkt), wkt_bbox) == 1.0
 
-        w = Workflow(
-            wkt=wkt_str,
-            **kwargs,
-        )
+        # bbox in -> wkt out
+        w = Workflow(bbox=expected_bbox, search=search_kwargs)
         assert w.bbox == expected_bbox
-        assert _iou(wkt.loads(w.wkt), loaded_wkt) == 1.0
+        assert _iou(wkt.loads(w.wkt), loaded_wkt) == pytest.approx(1.0)
 
+        # wkt string in -> bbox out
+        w = Workflow(wkt=wkt_str, search=search_kwargs)
+        assert w.bbox == expected_bbox
+
+        # wkt path in -> bbox out
         wkt_file = tmp_path / "aoi.wkt"
         wkt_file.write_text(wkt_str)
-        w = Workflow(
-            **kwargs,
-            wkt=wkt_file,
-        )
-        assert _iou(wkt.loads(w.wkt), loaded_wkt) == 1.0
+        w = Workflow(wkt=str(wkt_file), search=search_kwargs)
         assert w.bbox == expected_bbox
 
-    def test_workflow_default_factory_order(self, bbox):
-        start, end, track = "2022-12-15", "2022-12-29", 78
-        dem_path = Path() / "dem"
-        mask_path = Path() / "mask"
+    def test_default_factory_order(self, bbox, search_kwargs):
+        # Custom paths are honored.
+        dem = Path("dem")
+        mask = Path("mask")
         w = Workflow(
-            water_mask_filename=mask_path,
-            dem_filename=dem_path,
-            asf_query=ASFQuery(
-                start=start, end=end, relativeOrbit=track, out_dir="data", bbox=bbox
-            ),
+            bbox=bbox,
+            search=search_kwargs,
+            dem_filename=dem,
+            water_mask_filename=mask,
         )
-        # assert can set
-        assert w.water_mask_filename == mask_path
-        assert w.dem_filename == dem_path
+        assert w.dem_filename == dem
+        assert w.water_mask_filename == mask
 
-        w = Workflow(
-            asf_query=ASFQuery(
-                start=start, end=end, relativeOrbit=track, out_dir="data", bbox=bbox
-            )
-        )
-        # assert defaults work
-        assert w.work_dir / "dem.tif" == w.dem_filename
-        assert w.work_dir / "watermask.flg" == w.water_mask_filename
-
-        # assert computed fields work
+        # Defaults are derived from work_dir.
+        w = Workflow(bbox=bbox, search=search_kwargs)
+        assert w.dem_filename == w.work_dir / "dem.tif"
+        assert w.water_mask_filename == w.work_dir / "watermask.flg"
         assert w.log_dir == w.work_dir / "logs"
 
+    def test_missing_aoi_raises(self, search_kwargs):
+        with pytest.raises(ValueError, match="bbox.*wkt"):
+            Workflow(search=search_kwargs)
 
-def _iou(poly1, poly2):
+    def test_invalid_bbox_raises(self, search_kwargs):
+        # Latitude swapped
+        with pytest.raises(ValueError, match="Latitude"):
+            Workflow(bbox=(-10, 31, -9, 30), search=search_kwargs)
+        # Longitude swapped
+        with pytest.raises(ValueError, match="Longitude"):
+            Workflow(bbox=(-9, 30, -10, 31), search=search_kwargs)
+
+
+def _iou(poly1, poly2) -> float:
     return poly1.intersection(poly2).area / poly1.union(poly2).area

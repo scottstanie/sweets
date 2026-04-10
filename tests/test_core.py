@@ -9,7 +9,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from shapely import wkt
 
 from sweets.core import Workflow
 from sweets.download import BurstSearch, NisarGslcSearch, OperaCslcSearch
@@ -50,19 +49,22 @@ class TestWorkflow:
 
     def test_bbox_wkt_cross_fill(self, tmp_path, search_kwargs):
         wkt_str = "POLYGON((-10.0 30.0,-9.0 30.0,-9.0 31.0,-10.0 31.0,-10.0 30.0))"
-        loaded_wkt = wkt.loads(wkt_str)
         expected_bbox = (-10, 30, -9, 31)
 
-        # bbox in -> wkt out
+        # bbox in -> bbox stays bbox (no auto-wkt fill anymore — outer wkt is
+        # only set if the user explicitly supplied one)
         w = Workflow(bbox=expected_bbox, search=search_kwargs)
         assert w.bbox == expected_bbox
-        assert _iou(wkt.loads(w.wkt), loaded_wkt) == pytest.approx(1.0)
 
-        # wkt string in -> bbox out
+        # wkt string in -> bbox derived from wkt
         w = Workflow(wkt=wkt_str, search=search_kwargs)
         assert w.bbox == expected_bbox
+        assert w.wkt == wkt_str
+        # And the wkt is propagated down into the search source for
+        # downloaders that need a polygon (NisarGslcSearch, OperaCslcSearch).
+        assert w.search.wkt == wkt_str
 
-        # wkt path in -> bbox out
+        # wkt path in -> bbox out (file content is read at validation time)
         wkt_file = tmp_path / "aoi.wkt"
         wkt_file.write_text(wkt_str)
         w = Workflow(wkt=str(wkt_file), search=search_kwargs)
@@ -196,7 +198,3 @@ class TestWorkflow:
         assert isinstance(w.search, NisarGslcSearch)
         assert w.search.track == 13
         assert w.search.frame == 71
-
-
-def _iou(poly1, poly2) -> float:
-    return poly1.intersection(poly2).area / poly1.union(poly2).area

@@ -19,13 +19,13 @@ from __future__ import annotations
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, wait
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Optional, Union
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Optional, Union
 
 from dolphin.utils import set_num_threads
 from dolphin.workflows.config import YamlModel
 from opera_utils import group_by_burst
 from pydantic import ConfigDict, Field, computed_field, field_validator, model_validator
-from shapely import geometry, wkt as shp_wkt
+from shapely import wkt as shp_wkt
 
 from ._burst_db import get_burst_db
 from ._dolphin import DolphinOptions, run_displacement
@@ -42,10 +42,13 @@ from .download import BurstSearch, NisarGslcSearch, OperaCslcSearch
 if TYPE_CHECKING:
     from dolphin.workflows.displacement import OutputPaths
 
-# Tagged union: each variant carries a Literal[...] `kind` field, so Pydantic
-# can still dispatch on it during validation, but the JSON schema is a plain
-# `anyOf` rather than a discriminated `oneOf`.
-Source = Union[BurstSearch, OperaCslcSearch, NisarGslcSearch]
+# Discriminated union on the `kind` field. Pydantic dispatches directly to
+# the matching variant — much cleaner errors than a plain Union, which
+# tries each variant in order and reports failures from all of them.
+Source = Annotated[
+    Union[BurstSearch, OperaCslcSearch, NisarGslcSearch],
+    Field(discriminator="kind"),
+]
 
 logger = get_log(__name__)
 
@@ -205,15 +208,20 @@ class Workflow(YamlModel):
                 inner["bbox"] = bbox
         if outer_wkt is not None:
             values["wkt"] = outer_wkt
+            if not inner_wkt:
+                inner["wkt"] = outer_wkt
         return values
 
     @model_validator(mode="after")
     def _set_bbox_and_wkt(self) -> "Workflow":
+        # Derive bbox from wkt if only wkt was supplied; downstream code
+        # (DEM, dolphin bounds, etc.) all reads bbox, not wkt. We do NOT
+        # auto-fill wkt from bbox: nothing in the workflow reads outer wkt
+        # past this validator, and round-tripping a computed wkt was
+        # contaminating reload equality (the inner search would gain a
+        # wkt it never had on the first pass).
         if self.bbox is None and self.wkt is not None:
             self.bbox = shp_wkt.loads(self.wkt).bounds
-        if self.bbox is not None and self.wkt is None:
-            left, bottom, right, top = self.bbox
-            self.wkt = shp_wkt.dumps(geometry.box(left, bottom, right, top))
         assert self.bbox is not None
         if self.bbox[1] > self.bbox[3]:
             msg = f"Latitude min must be lower than max, got {self.bbox}"

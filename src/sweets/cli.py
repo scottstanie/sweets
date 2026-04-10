@@ -16,7 +16,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 
 import tyro
 
@@ -91,7 +91,7 @@ class ConfigCmd:
 class RunCmd:
     """Execute a sweets workflow from a config file."""
 
-    config_file: Path
+    config_file: Annotated[Path, tyro.conf.Positional]
     """Path to a sweets_config.yaml."""
 
     starting_step: int = 1

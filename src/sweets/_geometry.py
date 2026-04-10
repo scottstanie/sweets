@@ -59,20 +59,28 @@ def stitch_geometry(
     # Convert row/col looks to strides for the right shape
     strides = {"x": looks[1], "y": looks[0]}
     stitched_geom_files = []
-    # local_incidence_angle needed by anyone?
-    datasets = ["los_east", "los_north", "layover_shadow_mask"]
+    # local_incidence_angle is now stitched too — needed by the tropo
+    # correction step (apply_tropo wants per-pixel incidence in degrees).
+    datasets = [
+        "los_east",
+        "los_north",
+        "local_incidence_angle",
+        "layover_shadow_mask",
+    ]
     # Descriptions from:
     # https://github.com/opera-adt/Static_Layers_CSLC-S1_Specs/blob/main/XML/static_layers_cslc-s1.xml
     descriptions = [
         "East component of LOS unit vector from target to sensor",
         "North component of LOS unit vector from target to sensor",
+        "Local incidence angle in degrees",
         (
             "Layover shadow mask. 0=no layover, no shadow; 1=shadow; 2=layover;"
             " 3=shadow and layover."
         ),
     ]
-    # layover_shadow_mask is Int8 with 127 meaning nodata
-    nodatas = [0, 0, 127]
+    # layover_shadow_mask is Int8 with 127 meaning nodata; the float layers
+    # use 0 as nodata (matches the pre-existing convention).
+    nodatas = [0, 0, 0, 127]
     for ds_name, nodata, desc in zip(datasets, nodatas, descriptions):
         outfile = geom_dir / f"{ds_name}.tif"
         logger.info(f"Creating {outfile}")

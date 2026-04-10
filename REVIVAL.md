@@ -82,18 +82,51 @@ loose, and where to look next.
   call directly, that's a separate (large) job.
 - **Notebook updates** — out of scope for this swing.
 
+## Smoke test results (2026-04-09)
+
+Ran the burst2safe download path against the pecos AOI (`-102.96 31.22
+-101.91 31.56`, track 78, dates `2021-06-05` → `2021-06-22`, swath `IW2`)
+into `/Volumes/WD_BLACK_SN7100_4TB/Documents/Learning/s1-testing/pecos_revival/`.
+
+Result:
+
+- 2 SAFEs produced (one per acquisition date), 769 MB and 785 MB respectively.
+- Each contains `manifest.safe`, the IW2 measurement TIFF (~767 MB,
+  burst-trimmed to the AOI), and full IW1/IW2/IW3 annotations
+  (`all_anns=True` is set so COMPASS / s1-reader can find IW2's annotation).
+- Total wall time: ~4 minutes.
+- `Workflow.from_yaml` then `existing_safes()` round-trip detects them.
+
+**Caveat discovered:** if the bbox spans more than one IW subswath, burst2safe
+errors out with `Products from swaths IW1 and IW2 do not overlap`. The fix is
+to either pass `swaths=['IW2']` (or whichever subswath your AOI lives in) or
+to keep the bbox inside one subswath. Worth noting in user docs / closing
+issue #80 wording.
+
+Stages **not** smoke tested in this branch:
+
+- COMPASS geocoding (existing code path, untouched).
+- `dolphin.workflows.displacement.run` end-to-end against the new layout
+  (untouched in dolphin, but the way we feed it CSLCs is new).
+
+Both should "just work" given the existing pecos cache; the next session
+should run `sweets run --starting-step 2` against the smoke-tested config
+to confirm.
+
 ## Smoke-test recipe (pecos)
 
 ```bash
 # 1. Build the env
 pixi install
 
-# 2. Configure a tiny workflow
+# 2. Configure a tiny workflow (note the equal sign for the negative bbox
+#    longitudes — argparse-style CLIs choke on bare negative numbers).
 pixi run sweets config \
   --bbox=-102.96 31.22 -101.91 31.56 \
   --start 2021-06-05 \
-  --end 2021-08-10 \
+  --end 2021-06-22 \
   --track 78 \
+  --swaths IW2 \
   --out-dir /Volumes/WD_BLACK_SN7100_4TB/Documents/Learning/s1-testing/pecos_revival/data \
   --work-dir /Volumes/WD_BLACK_SN7100_4TB/Documents/Learning/s1-testing/pecos_revival \
   --output /Volumes/WD_BLACK_SN7100_4TB/Documents/Learning/s1-testing/pecos_revival/sweets_config.yaml

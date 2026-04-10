@@ -5,14 +5,25 @@ from os import fspath
 from pathlib import Path
 from typing import List, Literal, Optional, Tuple
 
-import compass.s1_geocode_slc
-import compass.s1_static_layers
-import journal
-from compass import s1_geocode_stack
-from compass.utils.geo_runconfig import GeoRunConfig
+import numpy as np
 
-from ._log import get_log
-from ._types import Filename
+# COMPASS still uses np.string_ / np.unicode_ aliases that were removed in
+# numpy 2.0. Restore them as thin shims before importing the package, so we
+# don't need a parallel COMPASS fork just for this. TODO: drop once compass
+# upstream is fixed and pinned (see REVIVAL.md).
+if not hasattr(np, "string_"):
+    np.string_ = np.bytes_  # type: ignore[attr-defined]
+if not hasattr(np, "unicode_"):
+    np.unicode_ = np.str_  # type: ignore[attr-defined]
+
+import compass.s1_geocode_slc  # noqa: E402
+import compass.s1_static_layers  # noqa: E402
+import journal  # noqa: E402
+from compass import s1_geocode_stack  # noqa: E402
+from compass.utils.geo_runconfig import GeoRunConfig  # noqa: E402
+
+from ._log import get_log  # noqa: E402
+from ._types import Filename  # noqa: E402
 
 logger = get_log(__name__)
 
@@ -68,7 +79,11 @@ def _get_cfg_setup(
     burst_id_date = "_".join(burst_id_tup)
     outfile = Path(params.hdf5_path)
     if module_name == "s1_static_layers":
-        outfile = outfile.with_name("static_layers_" + outfile.name)
+        # Static layers are per-burst, not per-date — COMPASS writes them as
+        # `static_layers_<burst>.h5`. Strip the trailing date from the name
+        # before adding the prefix.
+        burst_no_date = outfile.stem.rsplit("_", 1)[0]
+        outfile = outfile.with_name(f"static_layers_{burst_no_date}.h5")
     return cfg, outfile, burst_id_date
 
 

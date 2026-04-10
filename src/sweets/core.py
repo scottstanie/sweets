@@ -21,10 +21,12 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Optional, Union
 
-# Side-effect import: monkey-patches dolphin's YamlModel walker to handle
-# the new Workflow.search Union of submodels. Must come before any
-# `from dolphin.workflows.config import YamlModel`.
-from . import _dolphin_yaml_compat  # noqa: F401
+from dolphin.utils import set_num_threads
+from dolphin.workflows.config import YamlModel
+from opera_utils import group_by_burst
+from pydantic import ConfigDict, Field, computed_field, field_validator, model_validator
+from shapely import geometry, wkt as shp_wkt
+
 from ._burst_db import get_burst_db
 from ._dolphin import DolphinOptions, run_displacement
 from ._geocode_slcs import create_config_files, run_geocode, run_static_layers
@@ -35,21 +37,15 @@ from ._orbit import download_orbits
 from ._tropo import TropoOptions, run_tropo_correction
 from ._types import Filename
 from .dem import create_dem, create_water_mask
-from .download import BurstSearch, OperaCslcSearch
-from dolphin.utils import set_num_threads
-from dolphin.workflows.config import YamlModel
-from opera_utils import group_by_burst
-from pydantic import ConfigDict, Field, computed_field, field_validator, model_validator
-from shapely import geometry, wkt as shp_wkt
+from .download import BurstSearch, NisarGslcSearch, OperaCslcSearch
 
 if TYPE_CHECKING:
     from dolphin.workflows.displacement import OutputPaths
 
 # Tagged union: each variant carries a Literal[...] `kind` field, so Pydantic
 # can still dispatch on it during validation, but the JSON schema is a plain
-# `anyOf` rather than a discriminated `oneOf` (which dolphin's YamlModel
-# walker doesn't yet handle).
-Source = Union[BurstSearch, OperaCslcSearch]
+# `anyOf` rather than a discriminated `oneOf`.
+Source = Union[BurstSearch, OperaCslcSearch, NisarGslcSearch]
 
 logger = get_log(__name__)
 
@@ -185,7 +181,9 @@ class Workflow(YamlModel):
             return values
         if "search" not in values:
             values["search"] = {}
-        elif isinstance(values["search"], (BurstSearch, OperaCslcSearch)):
+        elif isinstance(
+            values["search"], (BurstSearch, OperaCslcSearch, NisarGslcSearch)
+        ):
             values["search"] = values["search"].model_dump(
                 exclude_unset=True, by_alias=True
             )
@@ -291,15 +289,22 @@ class Workflow(YamlModel):
     _MIN_VALID_GSLC_BYTES = 1 * 1024 * 1024
 
     def _existing_gslcs(self) -> list[Path]:
-        """Return on-disk CSLCs from either the COMPASS or OPERA path.
+        """Return on-disk CSLCs for whichever source variant is selected.
 
         - BurstSearch: COMPASS-written burst-organized HDF5s under gslc_dir.
         - OperaCslcSearch: pre-made OPERA CSLCs under search.out_dir.
+        - NisarGslcSearch: pre-made NISAR GSLC HDF5s under search.out_dir.
         """
         if isinstance(self.search, OperaCslcSearch):
             return [
                 p
                 for p in self.search.existing_cslcs()
+                if p.stat().st_size >= self._MIN_VALID_GSLC_BYTES
+            ]
+        if isinstance(self.search, NisarGslcSearch):
+            return [
+                p
+                for p in self.search.existing_files()
                 if p.stat().st_size >= self._MIN_VALID_GSLC_BYTES
             ]
         return [
@@ -312,6 +317,10 @@ class Workflow(YamlModel):
     def _existing_static_layers(self) -> list[Path]:
         if isinstance(self.search, OperaCslcSearch):
             return self.search.existing_static_layers()
+        # NisarGslcSearch has no separate static layers product — the caller
+        # is expected to skip the geometry-stitch step entirely.
+        if isinstance(self.search, NisarGslcSearch):
+            return []
         return sorted(self.gslc_dir.glob("t*/*/static_*.h5"))
 
     @log_runtime
@@ -329,6 +338,16 @@ class Workflow(YamlModel):
             if not self.search.existing_static_layers() or self.overwrite:
                 self.search.download_static_layers()
             return self.search.existing_cslcs()
+
+        if isinstance(self.search, NisarGslcSearch):
+            existing = self.search.existing_files()
+            if existing and not self.overwrite:
+                logger.info(
+                    f"Found {len(existing)} existing NISAR GSLCs in"
+                    f" {self.search.out_dir}; skipping CMR download."
+                )
+                return existing
+            return self.search.download()
 
         existing = self._existing_safes()
         if existing and not self.overwrite:
@@ -409,6 +428,17 @@ class Workflow(YamlModel):
             overwrite=self.overwrite,
         )
 
+    def _dolphin_subdataset(self) -> str:
+        """Pick the right HDF5 subdataset path for the current source.
+
+        NISAR GSLCs live at ``/science/LSAR/GSLC/grids/frequency{A,B}/{POL}``
+        (computed by ``NisarGslcSearch.hdf5_subdataset``); COMPASS / OPERA
+        CSLCs default to ``/data/VV``.
+        """
+        if isinstance(self.search, NisarGslcSearch):
+            return self.search.hdf5_subdataset
+        return "/data/VV"
+
     @log_runtime
     def _run_dolphin(self, gslc_files: list[Path]) -> "OutputPaths":
         mask = self.water_mask_filename if self.water_mask_filename.exists() else None
@@ -419,6 +449,7 @@ class Workflow(YamlModel):
             mask_file=mask,
             bounds=self.bbox,
             config_yaml=self.work_dir / "dolphin_config.yaml",
+            subdataset=self._dolphin_subdataset(),
         )
 
     # ------------------------------------------------------------------
@@ -447,7 +478,11 @@ class Workflow(YamlModel):
         self.work_dir.mkdir(parents=True, exist_ok=True)
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
-        is_opera = isinstance(self.search, OperaCslcSearch)
+        is_safe = isinstance(self.search, BurstSearch)
+        is_nisar = isinstance(self.search, NisarGslcSearch)
+        # COMPASS is only needed for the raw-SAFE path. OPERA and NISAR both
+        # deliver pre-geocoded HDF5s.
+        needs_compass = is_safe
 
         # ---- Step 1: download (DEM, water mask, burst DB, source SLCs) ----
         if starting_step <= 1:
@@ -456,8 +491,8 @@ class Workflow(YamlModel):
                 mask_fut = pool.submit(
                     create_water_mask, self.water_mask_filename, self._dem_bbox
                 )
-                # burst-db is only needed by COMPASS; skip it for OPERA path.
-                burst_db_fut = None if is_opera else pool.submit(get_burst_db)
+                # burst-db is only needed by COMPASS.
+                burst_db_fut = pool.submit(get_burst_db) if needs_compass else None
                 futures: list = [dem_fut, mask_fut]
                 if burst_db_fut is not None:
                     futures.append(burst_db_fut)
@@ -467,11 +502,19 @@ class Workflow(YamlModel):
                 burst_db_file = burst_db_fut.result() if burst_db_fut else None
             self._download()
         else:
-            burst_db_file = None if is_opera else get_burst_db()
+            burst_db_file = get_burst_db() if needs_compass else None
 
         # ---- Step 2: produce CSLCs + stitch geometry ----
         if starting_step <= 2:
-            if isinstance(self.search, OperaCslcSearch):
+            if isinstance(self.search, NisarGslcSearch):
+                # NISAR GSLCs are already geocoded and carry their own
+                # per-frame metadata; there's no static-layers product to
+                # stitch, and dolphin reads the grid from the HDF5 itself.
+                logger.info(
+                    "NISAR source: skipping COMPASS and geometry stitching;"
+                    " dolphin will read the grid from the GSLC HDF5s."
+                )
+            elif isinstance(self.search, OperaCslcSearch):
                 # OPERA path: pre-made CSLCs, just stitch the static layers.
                 static_files = self._existing_static_layers()
                 if not static_files:
@@ -502,14 +545,25 @@ class Workflow(YamlModel):
         gslc_files = self._existing_gslcs()
         logger.info(f"Found {len(gslc_files)} GSLC files for dolphin")
         if not gslc_files:
-            where = self.search.out_dir if is_opera else self.gslc_dir
+            where = (
+                self.search.out_dir
+                if (is_nisar or isinstance(self.search, OperaCslcSearch))
+                else self.gslc_dir
+            )
             msg = f"No GSLCs found in {where}; cannot run dolphin."
             raise RuntimeError(msg)
         out_paths = self._run_dolphin(gslc_files)
 
         # ---- Optional post-step: tropospheric correction ----
         if self.tropo.enabled:
-            self._run_tropo(gslc_files, out_paths)
+            if isinstance(self.search, NisarGslcSearch):
+                logger.warning(
+                    "Tropo correction is not supported with the NISAR GSLC"
+                    " source yet (no stitched incidence angle raster is"
+                    " produced for NISAR). Skipping."
+                )
+            else:
+                self._run_tropo(gslc_files, out_paths)
 
         return out_paths
 
@@ -517,14 +571,13 @@ class Workflow(YamlModel):
     def _run_tropo(
         self, gslc_files: list[Path], out_paths: "OutputPaths"
     ) -> list[Path]:
-        """Apply OPERA L4 TROPO-ZENITH corrections to dolphin's unwrapped phase."""
-        unwrapped_files = list(out_paths.unwrapped_paths or [])
-        if not unwrapped_files:
-            logger.warning(
-                "Tropo correction enabled but dolphin produced no unwrapped"
-                " interferograms; skipping."
-            )
-            return []
+        """Apply OPERA L4 TROPO-ZENITH corrections to dolphin's outputs.
+
+        The new `run_tropo_correction` reaches into `dolphin_dir/unwrapped/`
+        and `dolphin_dir/timeseries/` itself, correcting both the unwrapped
+        interferograms and the per-pair timeseries rasters in one shot.
+        """
+        del out_paths  # glob from disk — survives starting_step=3 reruns
         incidence_path = self.geom_dir / "local_incidence_angle.tif"
         if not incidence_path.exists():
             msg = (
@@ -534,10 +587,9 @@ class Workflow(YamlModel):
             raise RuntimeError(msg)
         return run_tropo_correction(
             slc_files=gslc_files,
-            unwrapped_files=unwrapped_files,
             dem_path=self.dem_filename,
             incidence_angle_path=incidence_path,
-            output_dir=self.dolphin_dir,
+            dolphin_work_dir=self.dolphin_dir,
             options=self.tropo,
         )
 

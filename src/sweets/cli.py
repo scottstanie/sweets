@@ -20,7 +20,7 @@ from typing import Annotated, Literal, Optional
 
 import tyro
 
-SourceKind = Literal["safe", "opera-cslc"]
+SourceKind = Literal["safe", "opera-cslc", "nisar-gslc"]
 
 
 @dataclass
@@ -33,9 +33,6 @@ class ConfigCmd:
     end: str
     """End date for the burst search (YYYY-MM-DD)."""
 
-    track: int
-    """Sentinel-1 relative orbit / track number."""
-
     bbox: Optional[tuple[float, float, float, float]] = None
     """AOI as left bottom right top in decimal degrees. One of --bbox or --wkt is required."""
 
@@ -43,16 +40,25 @@ class ConfigCmd:
     """AOI as a WKT polygon string, or path to a .wkt file. Overrides --bbox."""
 
     source: SourceKind = "safe"
-    """Where the input SLCs come from. `safe` (default) downloads raw S1 bursts via burst2safe and runs COMPASS; `opera-cslc` pulls pre-made OPERA CSLC HDF5s from ASF (skips COMPASS, locked to OPERA's posting)."""
+    """Where the input SLCs come from. `safe` (default): raw S1 bursts via burst2safe + COMPASS. `opera-cslc`: pre-made OPERA CSLC HDF5s from ASF. `nisar-gslc`: pre-made NISAR GSLC HDF5s via CMR (L-band, UTM, already geocoded)."""
+
+    track: Optional[int] = None
+    """Sentinel-1 relative orbit / track number. Required for --source safe and --source opera-cslc."""
+
+    track_frame_number: Optional[int] = None
+    """NISAR repeat-pass track-frame number. Only honored by --source nisar-gslc."""
+
+    frequency: Literal["A", "B"] = "A"
+    """NISAR frequency band (`A` = L-band, `B` reserved). Only honored by --source nisar-gslc."""
 
     out_dir: Path = field(default_factory=lambda: Path("data"))
-    """Where downloaded SLC inputs (SAFEs or OPERA CSLC HDF5s) will live."""
+    """Where downloaded SLC inputs will live."""
 
     work_dir: Path = field(default_factory=Path.cwd)
     """Top-level working directory for the workflow."""
 
     polarizations: list[str] = field(default_factory=lambda: ["VV"])
-    """Polarizations to keep (only honored by --source safe)."""
+    """Polarizations to keep. Defaults to ['VV'] for S1/OPERA; pass --polarizations HH for NISAR."""
 
     swaths: Optional[list[str]] = None
     """Restrict to specific subswaths (e.g. ['IW2']). Only honored by --source safe."""
@@ -61,7 +67,7 @@ class ConfigCmd:
     """Process pool size for COMPASS geocoding (--source safe only)."""
 
     do_tropo: bool = False
-    """Run the OPERA L4 TROPO-ZENITH correction step after dolphin (off by default)."""
+    """Run the OPERA L4 TROPO-ZENITH correction step after dolphin (off by default; not supported with --source nisar-gslc)."""
 
     output: Path = Path("sweets_config.yaml")
     """Where to write the config file."""
@@ -79,13 +85,24 @@ class ConfigCmd:
             "kind": self.source,
             "start": self.start,
             "end": self.end,
-            "track": self.track,
             "out_dir": self.out_dir,
         }
-        # SAFE-only knobs
         if self.source == "safe":
+            if self.track is None:
+                print("error: --track is required for --source safe", file=sys.stderr)
+                raise SystemExit(2)
+            search["track"] = self.track
             search["polarizations"] = self.polarizations
             search["swaths"] = self.swaths
+        elif self.source == "opera-cslc":
+            # `track` is optional on OPERA — ASF will filter on AOI alone.
+            if self.track is not None:
+                search["track"] = self.track
+        elif self.source == "nisar-gslc":
+            if self.track_frame_number is not None:
+                search["track_frame_number"] = self.track_frame_number
+            search["frequency"] = self.frequency
+            search["polarizations"] = self.polarizations
 
         workflow = Workflow.model_validate(
             {

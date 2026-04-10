@@ -1,19 +1,24 @@
-"""Sentinel-1 source models: raw S1 bursts, or pre-made OPERA CSLCs.
+"""Sensor source models: raw S1 bursts, pre-made OPERA CSLCs, or NISAR GSLCs.
 
-Two source classes are exposed; both are :class:`YamlModel` Pydantic models
+Three source classes are exposed; all are :class:`YamlModel` Pydantic models
 with the same external shape (an AOI, a date range, an optional track and
-``out_dir``) so :class:`sweets.core.Workflow` can swap one for the other:
+``out_dir``) so :class:`sweets.core.Workflow` can swap between them:
 
 - :class:`BurstSearch` — wraps :func:`burst2safe.burst2stack.burst2stack`
   to download burst-trimmed ``.SAFE`` directories that the rest of the
-  workflow then geocodes via COMPASS. Default; works anywhere.
+  workflow then geocodes via COMPASS. Default; works anywhere S1 flies.
 - :class:`OperaCslcSearch` — wraps :func:`opera_utils.download.download_cslcs`
   + :func:`opera_utils.download.download_cslc_static_layers` to grab
   pre-geocoded OPERA CSLC HDF5s + their static layers from ASF DAAC. Skips
   COMPASS entirely; locked to OPERA's 5 m × 10 m posting; CONUS-friendly
   but coverage depends on what OPERA has actually produced for the AOI.
+- :class:`NisarGslcSearch` — wraps :func:`opera_utils.nisar.run_download`
+  to grab pre-geocoded NISAR GSLC HDF5s (L-band, UTM, 5×10 m posting)
+  with CMR-based search and optional bbox-level subsetting. Skips COMPASS
+  and static layer stitching (NISAR GSLCs have no separate static layers
+  product). Coverage and availability depend on NISAR's acquisition plan.
 
-Authentication for either source relies on a ``~/.netrc`` entry for
+Authentication for any source relies on a ``~/.netrc`` entry for
 ``urs.earthdata.nasa.gov``.
 """
 
@@ -495,3 +500,185 @@ class OperaCslcSearch(YamlModel):
     # check whether the download step can be skipped.
     def existing_files(self) -> list[Path]:
         return self.existing_cslcs()
+
+
+# ----------------------------------------------------------------------------
+# NISAR GSLC source
+# ----------------------------------------------------------------------------
+
+
+class NisarGslcSearch(YamlModel):
+    """Pre-made NISAR GSLC search/download configuration.
+
+    Wraps :func:`opera_utils.nisar.run_download` to search CMR for NISAR
+    GSLC products covering the AOI + date range, fetch the matching HDF5s,
+    and optionally subset each one to the AOI in a single pass. NISAR
+    GSLCs are already geocoded (UTM projection) and have no separate
+    "static layers" product, so the downstream workflow skips both COMPASS
+    and the geometry stitching step.
+    """
+
+    kind: Literal["nisar-gslc"] = Field(
+        default="nisar-gslc",
+        description="Discriminator for the source type. Always `nisar-gslc`.",
+    )
+    out_dir: Path = Field(
+        Path("data"),
+        description="Directory where the NISAR GSLC HDF5s will be written.",
+        validate_default=True,
+    )
+    bbox: Optional[tuple[float, float, float, float]] = Field(
+        None,
+        description=(
+            "Area of interest as (left, bottom, right, top) in decimal degrees."
+            " Used for both the CMR query and the bbox subset. Either `bbox`"
+            " or `wkt` must be set."
+        ),
+    )
+    wkt: Optional[str] = Field(
+        None,
+        description=(
+            "Area of interest as a WKT polygon string (or path to a `.wkt`"
+            " file). Converted to a bbox by `run_download`."
+        ),
+    )
+    start: datetime = Field(
+        ...,
+        description="Search start time (parsed by `dateutil.parser`).",
+    )
+    end: datetime = Field(
+        default_factory=datetime.now,
+        description="Search end time. Defaults to now.",
+    )
+    track_frame_number: Optional[int] = Field(
+        None,
+        description=(
+            "NISAR repeat-pass track-frame number (constant across cycles)."
+            " Optional — omit to search every frame that intersects the AOI."
+        ),
+    )
+    frequency: Literal["A", "B"] = Field(
+        default="A",
+        description="NISAR frequency band: `A` (L-band, default) or `B`.",
+    )
+    polarizations: Optional[list[str]] = Field(
+        None,
+        description=(
+            "Polarizations to keep (e.g. ['HH']). If None, `run_download`"
+            " extracts every polarization present in each source file."
+        ),
+    )
+    short_name: str = Field(
+        default="NISAR_L2_GSLC_BETA_V1",
+        description="CMR collection short-name to query.",
+    )
+    num_workers: int = Field(
+        default=4,
+        ge=1,
+        description="Concurrent download jobs.",
+    )
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    # ------------------------------------------------------------------
+    # Validators
+    # ------------------------------------------------------------------
+
+    @field_validator("start", "end", mode="before")
+    @classmethod
+    def _parse_datetime(cls, v: Any) -> datetime:
+        if isinstance(v, datetime):
+            return v
+        if isinstance(v, date):
+            return datetime.combine(v, datetime.min.time())
+        return parse_date(str(v))
+
+    @field_validator("out_dir")
+    @classmethod
+    def _absolute_out_dir(cls, v: Path) -> Path:
+        return Path(v).expanduser().resolve()
+
+    @field_validator("polarizations")
+    @classmethod
+    def _upper_pols(cls, v: Optional[list[str]]) -> Optional[list[str]]:
+        return [p.upper() for p in v] if v else v
+
+    @model_validator(mode="after")
+    def _check_aoi_and_dates(self) -> "NisarGslcSearch":
+        if not self.wkt and not self.bbox:
+            msg = "Must provide either `bbox` or `wkt`"
+            raise ValueError(msg)
+        if self.wkt and Path(self.wkt).exists():
+            self.wkt = Path(self.wkt).read_text().strip()
+        if self.wkt:
+            try:
+                shp_wkt.loads(self.wkt)
+            except Exception as e:
+                msg = f"Invalid WKT polygon: {e}"
+                raise ValueError(msg) from e
+        if self.end < self.start:
+            msg = f"`end` ({self.end}) must be after `start` ({self.start})"
+            raise ValueError(msg)
+        return self
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    @property
+    def aoi(self) -> Polygon:
+        if self.wkt:
+            return shp_wkt.loads(self.wkt)
+        assert self.bbox is not None
+        return box(*self.bbox)
+
+    @property
+    def hdf5_subdataset(self) -> str:
+        """Return the dolphin `input_options.subdataset` path for this config.
+
+        NISAR GSLCs put the complex data at
+        ``/science/LSAR/GSLC/grids/frequency{A,B}/{POL}``; the polarization
+        defaults to ``HH`` if the user didn't pin a list.
+        """
+        pol = (self.polarizations or ["HH"])[0]
+        return f"/science/LSAR/GSLC/grids/frequency{self.frequency}/{pol}"
+
+    def summary(self) -> str:
+        return (
+            "NisarGslcSearch:\n"
+            f"  AOI bounds       : {self.aoi.bounds}\n"
+            f"  Dates            : {self.start.date()} -> {self.end.date()}\n"
+            f"  Track-frame      : {self.track_frame_number or 'any'}\n"
+            f"  Frequency        : {self.frequency}\n"
+            f"  Polarizations    : {self.polarizations or 'all'}\n"
+            f"  CMR short_name   : {self.short_name}\n"
+            f"  Output           : {self.out_dir}"
+        )
+
+    @log_runtime
+    def download(self) -> list[Path]:
+        """Search + download + bbox-subset NISAR GSLC HDF5s into `out_dir`."""
+        from opera_utils.nisar import run_download
+
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(self.summary())
+
+        bounds: tuple[float, float, float, float] = tuple(self.aoi.bounds)  # type: ignore[assignment]
+        result = run_download(
+            bbox=bounds,
+            track_frame_number=self.track_frame_number,
+            start_datetime=self.start,
+            end_datetime=self.end,
+            frequency=self.frequency,
+            polarizations=self.polarizations,
+            short_name=self.short_name,
+            num_workers=self.num_workers,
+            output_dir=self.out_dir,
+        )
+        files = sorted(Path(p) for p in result)
+        logger.info(f"Downloaded {len(files)} NISAR GSLC files to {self.out_dir}")
+        return files
+
+    def existing_files(self) -> list[Path]:
+        """Return any NISAR GSLC HDF5s already present in `out_dir`."""
+        return sorted(self.out_dir.glob("NISAR_L2_*GSLC*.h5"))

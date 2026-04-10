@@ -12,7 +12,7 @@ import pytest
 from shapely import wkt
 
 from sweets.core import Workflow
-from sweets.download import BurstSearch, OperaCslcSearch
+from sweets.download import BurstSearch, NisarGslcSearch, OperaCslcSearch
 
 
 @pytest.fixture
@@ -131,6 +131,49 @@ class TestWorkflow:
         w2 = Workflow.from_yaml(out)
         assert isinstance(w2.search, OperaCslcSearch)
         assert w2.tropo.enabled is True
+
+    def test_nisar_gslc_kind(self, bbox):
+        """`kind: nisar-gslc` should produce a NisarGslcSearch source."""
+        w = Workflow.model_validate(
+            {
+                "bbox": bbox,
+                "search": {
+                    "kind": "nisar-gslc",
+                    "start": "2024-06-01",
+                    "end": "2024-08-10",
+                    "frequency": "A",
+                    "polarizations": ["HH"],
+                },
+            }
+        )
+        assert isinstance(w.search, NisarGslcSearch)
+        assert w.search.kind == "nisar-gslc"
+        assert w.search.frequency == "A"
+        assert w.search.polarizations == ["HH"]
+        assert w.search.bbox == bbox
+        # NISAR subdataset path that gets handed to dolphin
+        assert w.search.hdf5_subdataset == "/science/LSAR/GSLC/grids/frequencyA/HH"
+
+    def test_nisar_gslc_yaml_roundtrip(self, tmp_path, bbox):
+        w = Workflow.model_validate(
+            {
+                "bbox": bbox,
+                "search": {
+                    "kind": "nisar-gslc",
+                    "start": "2024-06-01",
+                    "end": "2024-08-10",
+                    "track_frame_number": 8,
+                    "frequency": "A",
+                    "polarizations": ["HH"],
+                },
+            }
+        )
+        out = tmp_path / "config.yaml"
+        w.to_yaml(out, with_comments=True)
+        w2 = Workflow.from_yaml(out)
+        assert isinstance(w2.search, NisarGslcSearch)
+        assert w2.search.track_frame_number == 8
+        assert w2.search.frequency == "A"
 
 
 def _iou(poly1, poly2) -> float:

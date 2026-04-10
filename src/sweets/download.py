@@ -550,11 +550,23 @@ class NisarGslcSearch(YamlModel):
         default_factory=datetime.now,
         description="Search end time. Defaults to now.",
     )
-    track_frame_number: Optional[int] = Field(
+    track: Optional[int] = Field(
         None,
+        alias="relative_orbit_number",
         description=(
-            "NISAR repeat-pass track-frame number (constant across cycles)."
-            " Optional — omit to search every frame that intersects the AOI."
+            "NISAR relative orbit / track number — the `Track` field on ASF"
+            " Vertex, the `RRR` digits in the granule filename. Constant"
+            " across repeat passes. Combined with `frame` it pins a single"
+            " repeat-pass stack."
+        ),
+    )
+    frame: Optional[int] = Field(
+        None,
+        alias="track_frame_number",
+        description=(
+            "NISAR track-frame number — the `Frame` field on ASF Vertex, the"
+            " `TTT` digits in the granule filename (e.g. `71`). Constant"
+            " across repeat passes."
         ),
     )
     frequency: Literal["A", "B"] = Field(
@@ -648,7 +660,8 @@ class NisarGslcSearch(YamlModel):
             "NisarGslcSearch:\n"
             f"  AOI bounds       : {self.aoi.bounds}\n"
             f"  Dates            : {self.start.date()} -> {self.end.date()}\n"
-            f"  Track-frame      : {self.track_frame_number or 'any'}\n"
+            f"  Track            : {self.track or 'any'}\n"
+            f"  Frame            : {self.frame or 'any'}\n"
             f"  Frequency        : {self.frequency}\n"
             f"  Polarizations    : {self.polarizations or 'all'}\n"
             f"  CMR short_name   : {self.short_name}\n"
@@ -666,7 +679,8 @@ class NisarGslcSearch(YamlModel):
         bounds: tuple[float, float, float, float] = tuple(self.aoi.bounds)  # type: ignore[assignment]
         result = run_download(
             bbox=bounds,
-            track_frame_number=self.track_frame_number,
+            relative_orbit_number=self.track,
+            track_frame_number=self.frame,
             start_datetime=self.start,
             end_datetime=self.end,
             frequency=self.frequency,

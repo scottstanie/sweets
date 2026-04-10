@@ -155,6 +155,8 @@ class TestWorkflow:
         assert w.search.hdf5_subdataset == "/science/LSAR/GSLC/grids/frequencyA/HH"
 
     def test_nisar_gslc_yaml_roundtrip(self, tmp_path, bbox):
+        # `track`/`frame` are the user-facing names; the opera-utils field
+        # aliases (`relative_orbit_number` / `track_frame_number`) also work.
         w = Workflow.model_validate(
             {
                 "bbox": bbox,
@@ -162,7 +164,8 @@ class TestWorkflow:
                     "kind": "nisar-gslc",
                     "start": "2024-06-01",
                     "end": "2024-08-10",
-                    "track_frame_number": 8,
+                    "track": 13,
+                    "frame": 71,
                     "frequency": "A",
                     "polarizations": ["HH"],
                 },
@@ -172,8 +175,27 @@ class TestWorkflow:
         w.to_yaml(out, with_comments=True)
         w2 = Workflow.from_yaml(out)
         assert isinstance(w2.search, NisarGslcSearch)
-        assert w2.search.track_frame_number == 8
+        assert w2.search.track == 13
+        assert w2.search.frame == 71
         assert w2.search.frequency == "A"
+
+    def test_nisar_gslc_alias_field_names(self, bbox):
+        """opera-utils' canonical names should still validate via aliases."""
+        w = Workflow.model_validate(
+            {
+                "bbox": bbox,
+                "search": {
+                    "kind": "nisar-gslc",
+                    "start": "2024-06-01",
+                    "end": "2024-08-10",
+                    "relative_orbit_number": 13,
+                    "track_frame_number": 71,
+                },
+            }
+        )
+        assert isinstance(w.search, NisarGslcSearch)
+        assert w.search.track == 13
+        assert w.search.frame == 71
 
 
 def _iou(poly1, poly2) -> float:

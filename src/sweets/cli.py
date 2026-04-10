@@ -43,10 +43,10 @@ class ConfigCmd:
     """Where the input SLCs come from. `safe` (default): raw S1 bursts via burst2safe + COMPASS. `opera-cslc`: pre-made OPERA CSLC HDF5s from ASF. `nisar-gslc`: pre-made NISAR GSLC HDF5s via CMR (L-band, UTM, already geocoded)."""
 
     track: Optional[int] = None
-    """Sentinel-1 relative orbit / track number. Required for --source safe and --source opera-cslc."""
+    """Relative orbit / track number. Required for --source safe; optional but recommended for --source opera-cslc and --source nisar-gslc. For NISAR this is the `Track` field on ASF Vertex (the RRR digits in the granule filename)."""
 
-    track_frame_number: Optional[int] = None
-    """NISAR repeat-pass track-frame number. Only honored by --source nisar-gslc."""
+    frame: Optional[int] = None
+    """NISAR track-frame number — the `Frame` field on ASF Vertex (the TTT digits in the granule filename, e.g. `71`). Only honored by --source nisar-gslc."""
 
     frequency: Literal["A", "B"] = "A"
     """NISAR frequency band (`A` = L-band, `B` reserved). Only honored by --source nisar-gslc."""
@@ -99,8 +99,10 @@ class ConfigCmd:
             if self.track is not None:
                 search["track"] = self.track
         elif self.source == "nisar-gslc":
-            if self.track_frame_number is not None:
-                search["track_frame_number"] = self.track_frame_number
+            if self.track is not None:
+                search["track"] = self.track
+            if self.frame is not None:
+                search["frame"] = self.frame
             search["frequency"] = self.frequency
             search["polarizations"] = self.polarizations
 

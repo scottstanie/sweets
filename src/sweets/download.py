@@ -1,326 +1,267 @@
-#!/usr/bin/env python
-"""Script for downloading through https://asf.alaska.edu/api/.
+"""Sentinel-1 burst download via burst2safe.
 
-Base taken from
-https://github.com/scottyhq/isce_notes/blob/master/BatchProcessing.md
-https://github.com/scottstanie/apertools/blob/master/apertools/asfdownload.py
+Replaces the old frame-based ASF query / wget pipeline. Bursts are downloaded
+straight from the ASF DAAC into ``.SAFE`` directories that cover only the
+requested area, dramatically reducing data volume for small AOIs.
 
+Authentication relies on a ``~/.netrc`` entry for ``urs.earthdata.nasa.gov``,
+which is what burst2safe and ``sentineleof`` already expect.
 
-You need a .netrc to download:
-
-# cat ~/.netrc
-machine urs.earthdata.nasa.gov
-    login CHANGE
-    password CHANGE
-
+Examples
+--------
+>>> from datetime import datetime
+>>> search = BurstSearch(
+...     bbox=(-102.96, 31.22, -101.91, 31.56),
+...     start=datetime(2021, 6, 1),
+...     end=datetime(2021, 8, 10),
+...     track=78,
+... )
+>>> safes = search.download()  # doctest: +SKIP
 """
 
 from __future__ import annotations
 
-import argparse
-import json
-import os
-import subprocess
-import sys
-import zipfile
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal, Optional
-from urllib.parse import urlencode
 
-import requests
-from dateutil.parser import parse
+from dateutil.parser import parse as parse_date
 from dolphin.workflows.config import YamlModel
-from pydantic import ConfigDict, Field, PrivateAttr, field_validator, model_validator
-from shapely.geometry import box
+from pydantic import ConfigDict, Field, field_validator, model_validator
+from shapely import wkt as shp_wkt
+from shapely.geometry import Polygon, box
 
 from ._log import get_log, log_runtime
-from ._types import Filename
-from ._unzip import unzip_all
 
 logger = get_log(__name__)
 
-DIRNAME = os.path.dirname(os.path.abspath(__file__))
+
+FlightDirection = Literal["ASCENDING", "DESCENDING"]
 
 
-class ASFQuery(YamlModel):
-    """Class holding the Sentinel-1 ASF query parameters."""
+class BurstSearch(YamlModel):
+    """Sentinel-1 burst search/download configuration.
+
+    Wraps :func:`burst2safe.burst2stack.burst2stack` so the user can pin a
+    small AOI (bbox or WKT polygon) plus a date range and a track number,
+    and get back ``.SAFE`` directories containing only the bursts that
+    intersect the AOI.
+    """
 
     out_dir: Path = Field(
-        Path(".") / "data",
-        description="Output directory for downloaded files",
+        Path("data"),
+        description="Directory where SAFE directories will be written.",
         validate_default=True,
     )
-    bbox: Optional[tuple] = Field(
+    bbox: Optional[tuple[float, float, float, float]] = Field(
         None,
         description=(
-            "lower left lon, lat, upper right format e.g."
-            " bbox=(-150.2,65.0,-150.1,65.5)"
+            "Area of interest as (left, bottom, right, top) in decimal degrees."
+            " Either `bbox` or `wkt` must be set."
         ),
     )
     wkt: Optional[str] = Field(
         None,
-        description="Well Known Text (WKT) string",
+        description=(
+            "Area of interest as a WKT polygon string (or path to a `.wkt` file)."
+            " Takes precedence over `bbox` if both are provided."
+        ),
     )
     start: datetime = Field(
         ...,
-        description=(
-            "Starting time for search. Can be datetime or string (goes to"
-            " `dateutil.parse`)"
-        ),
+        description="Search start time (parsed by `dateutil.parser`).",
     )
     end: datetime = Field(
         default_factory=datetime.now,
-        description=(
-            "Ending time for search. Can be datetime or string (goes to"
-            " `dateutil.parse`)"
-        ),
+        description="Search end time. Defaults to now.",
     )
     track: Optional[int] = Field(
         None,
         alias="relativeOrbit",
-        description="Path number",
+        description="Sentinel-1 relative orbit / track number.",
     )
-    flight_direction: Optional[Literal["ASCENDING", "DESCENDING"]] = Field(
+    flight_direction: Optional[FlightDirection] = Field(
         None,
         alias="flightDirection",
-        description="Direction of satellite during acquisition.",
+        description="Restrict to ASCENDING or DESCENDING acquisitions.",
     )
-    frames: Optional[tuple[int, int]] = Field(
+    polarizations: list[str] = Field(
+        default_factory=lambda: ["VV"],
+        description="Polarizations to include (e.g. ['VV'], ['VV', 'VH']).",
+    )
+    swaths: Optional[list[str]] = Field(
         None,
-        description="(start, end) range of ASF frames.",
+        description=(
+            "Restrict to specific subswaths (e.g. ['IW2']). If None, all swaths"
+            " covering the AOI are downloaded."
+        ),
     )
-    unzip: bool = Field(
-        False,
-        description="Unzip downloaded files into .SAFE directories",
+    min_bursts: int = Field(
+        1,
+        description="Minimum number of bursts a SAFE must contain to be kept.",
+        ge=1,
     )
-    _url: str = PrivateAttr()
-    model_config = ConfigDict(extra="forbid")
+    all_anns: bool = Field(
+        True,
+        description=(
+            "Include annotations for all swaths in the produced SAFE files."
+            " Required by `s1-reader` / COMPASS, which always reads the IW2"
+            " annotation regardless of the subswath being processed."
+        ),
+    )
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    # ------------------------------------------------------------------
+    # Validators
+    # ------------------------------------------------------------------
 
     @field_validator("start", "end", mode="before")
     @classmethod
-    def _parse_date(cls, v):
+    def _parse_datetime(cls, v: Any) -> datetime:
         if isinstance(v, datetime):
             return v
-        elif isinstance(v, date):
-            # Convert to datetime
+        if isinstance(v, date):
             return datetime.combine(v, datetime.min.time())
-        return parse(v)
+        return parse_date(str(v))
 
     @field_validator("out_dir")
-    def _is_absolute(cls, v):
-        return Path(v).resolve()
-
-    @field_validator("flight_direction")
     @classmethod
-    def _accept_prefixes(cls, v):
+    def _absolute_out_dir(cls, v: Path) -> Path:
+        return Path(v).expanduser().resolve()
+
+    @field_validator("flight_direction", mode="before")
+    @classmethod
+    def _normalize_flight_direction(cls, v: Any) -> Optional[str]:
         if v is None:
-            return v
-        if v.lower().startswith("a"):
+            return None
+        s = str(v).upper()
+        if s.startswith("A"):
             return "ASCENDING"
-        elif v.lower().startswith("d"):
+        if s.startswith("D"):
             return "DESCENDING"
+        msg = f"Unrecognized flight direction: {v!r}"
+        raise ValueError(msg)
 
-    @model_validator(mode="before")
-    def _check_search_area(cls, values: Any):
-        if isinstance(values, dict):
-            if not values.get("wkt"):
-                if values.get("bbox") is not None:
-                    values["wkt"] = box(*values["bbox"]).wkt
-                else:
-                    raise ValueError("Must provide a bbox or wkt")
+    @field_validator("polarizations")
+    @classmethod
+    def _upper_pols(cls, v: list[str]) -> list[str]:
+        return [p.upper() for p in v]
 
-            elif Path(values["wkt"]).exists():
-                values["wkt"] = Path(values["wkt"]).read_text().strip()
+    @field_validator("swaths")
+    @classmethod
+    def _upper_swaths(cls, v: Optional[list[str]]) -> Optional[list[str]]:
+        return [s.upper() for s in v] if v else v
 
-            # Check that end is after start
-            if values.get("start") is not None and values.get("end") is not None:
-                if values["end"] < values["start"]:
-                    raise ValueError("End must be after start")
-        return values
+    @model_validator(mode="after")
+    def _check_aoi_and_dates(self) -> "BurstSearch":
+        if not self.wkt and not self.bbox:
+            msg = "Must provide either `bbox` or `wkt`"
+            raise ValueError(msg)
+        if self.wkt and Path(self.wkt).exists():
+            self.wkt = Path(self.wkt).read_text().strip()
+        if self.wkt:
+            try:
+                shp_wkt.loads(self.wkt)
+            except Exception as e:
+                msg = f"Invalid WKT polygon: {e}"
+                raise ValueError(msg) from e
+        if self.end < self.start:
+            msg = f"`end` ({self.end}) must be after `start` ({self.start})"
+            raise ValueError(msg)
+        return self
 
-    def __init__(self, **data: Any) -> None:
-        super().__init__(**data)
-        # Form the url for the ASF query.
-        self._url = self._form_url()
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
-    def _form_url(self) -> str:
-        """Form the url for the ASF query."""
-        frame_str = f"{self.frames[0]}-{self.frames[1]}" if self.frames else None
-        params = dict(
-            # bbox is getting deprecated in favor of intersectsWith
-            # https://docs.asf.alaska.edu/api/keywords/#geospatial-parameters
-            intersectsWith=self.wkt,
-            start=self.start,
-            end=self.end,
-            processingLevel="SLC",
-            relativeOrbit=self.track,
-            flightDirection=self.flight_direction,
-            maxResults=2000,
-            output="geojson",
-            platform="S1",  # Currently only supporting S1 right now
-            beamMode="IW",
-            frame=frame_str,
+    @property
+    def aoi(self) -> Polygon:
+        """Return the search AOI as a shapely Polygon."""
+        if self.wkt:
+            return shp_wkt.loads(self.wkt)
+        assert self.bbox is not None  # enforced in validator
+        return box(*self.bbox)
+
+    def summary(self) -> str:
+        """Return a human-readable summary of the planned search."""
+        bounds = self.aoi.bounds
+        return (
+            "BurstSearch:\n"
+            f"  AOI bounds : {bounds}\n"
+            f"  Dates      : {self.start.date()} -> {self.end.date()}\n"
+            f"  Track      : {self.track}\n"
+            f"  Direction  : {self.flight_direction or 'any'}\n"
+            f"  Pols       : {self.polarizations}\n"
+            f"  Swaths     : {self.swaths or 'any'}\n"
+            f"  Output     : {self.out_dir}"
         )
-        params = {k: v for k, v in params.items() if v is not None}
-        base_url = "https://api.daac.asf.alaska.edu/services/search/param?{params}"
-        return base_url.format(params=urlencode(params))
-
-    def query_results(self) -> dict:
-        """Query the ASF API and save the results to a file."""
-        return _query_url(self._url)
-
-    @staticmethod
-    def _get_urls(results: dict) -> list[str]:
-        return [r["properties"]["url"] for r in results["features"]]
-
-    @staticmethod
-    def _file_names(results: dict) -> list[str]:
-        return [r["properties"]["fileName"] for r in results["features"]]
-
-    def _download_with_aria(self, urls, log_dir: Filename = Path(".")):
-        url_filename = self.out_dir / "urls.txt"
-        with open(self.out_dir / url_filename, "w") as f:
-            for u in urls:
-                f.write(u + "\n")
-
-        log_filename = Path(log_dir) / "aria2c.log"
-        aria_cmd = f'aria2c -i "{url_filename}" -d "{self.out_dir}" --continue=true'
-        logger.info("Downloading with aria2c")
-        logger.info(aria_cmd)
-        with open(log_filename, "w") as f:
-            subprocess.run(aria_cmd, shell=True, stdout=f, stderr=f, text=True)
-
-    def _download_with_wget(self, urls, log_dir: Filename = Path(".")):
-        def download_url(idx_url_pair):
-            idx, u = idx_url_pair
-            log_filename = Path(log_dir) / f"wget_{idx:02d}.log"
-            with open(log_filename, "w") as f:
-                wget_cmd = f'wget -nc -c "{u}" -P "{self.out_dir}"'
-                logger.info(f"({idx} / {len(urls)}): Downloading {u} with wget")
-                logger.info(wget_cmd)
-                subprocess.run(wget_cmd, shell=True, stdout=f, stderr=f, text=True)
-
-        # Parallelize the download using ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            list(executor.map(download_url, enumerate(urls)))
 
     @log_runtime
-    def download(self, log_dir: Filename = Path(".")) -> list[Path]:
-        # Start by saving data available as geojson
-        results = self.query_results()
-        urls = self._get_urls(results)
+    def download(self) -> list[Path]:
+        """Download bursts covering the AOI as SAFE directories.
 
-        if not urls:
-            raise ValueError("No results found for query")
+        Returns
+        -------
+        list[Path]
+            Paths of the produced ``.SAFE`` directories.
 
-        # Make the output directory
-        logger.info(f"Saving to {self.out_dir}")
+        """
+        # Imported lazily so importing this module is cheap and so users
+        # without burst2safe still get a clear error.
+        from burst2safe.burst2stack import burst2stack
+
         self.out_dir.mkdir(parents=True, exist_ok=True)
-        file_names = [self.out_dir / f for f in self._file_names(results)]
+        logger.info(self.summary())
 
-        # TODO: use aria if available? or just make wget parallel...
-        self._download_with_wget(urls, log_dir=log_dir)
+        result = burst2stack(
+            rel_orbit=self.track,
+            start_date=self.start,
+            end_date=self.end,
+            extent=self.aoi,
+            polarizations=self.polarizations,
+            swaths=self.swaths,
+            min_bursts=self.min_bursts,
+            all_anns=self.all_anns,
+            work_dir=self.out_dir,
+        )
+        safes = sorted(Path(p) for p in result)
+        logger.info(f"Downloaded {len(safes)} SAFE directories to {self.out_dir}")
+        if self.flight_direction is not None:
+            safes = _filter_by_flight_direction(safes, self.flight_direction)
+        return safes
 
-        if self.unzip:
-            # Change to .SAFE extension
-            logger.info("Unzipping files...")
-            file_names = unzip_all(self.out_dir, out_dir=self.out_dir)
-        return file_names
-
-
-@lru_cache(maxsize=10)
-def _query_url(url: str) -> dict:
-    """Query the ASF API and save the results to a file."""
-    logger.info("Querying url:")
-    print(url, file=sys.stderr)
-    resp = requests.get(url)
-    resp.raise_for_status()
-    results = json.loads(resp.content.decode("utf-8"))
-    return results
-
-
-def cli():
-    """Run the command line interface."""
-    p = argparse.ArgumentParser()
-    p.add_argument(
-        "--out-dir",
-        "-o",
-        help="Path to directory for saving output files (default=%(default)s)",
-        default="./",
-    )
-    p.add_argument(
-        "--bbox",
-        nargs=4,
-        metavar=("left", "bottom", "right", "top"),
-        type=float,
-        help=(
-            "Bounding box of area of interest  (e.g. --bbox -106.1 30.1 -103.1 33.1 ). "
-        ),
-    )
-    p.add_argument(
-        "--wkt-file",
-        help="Filename of a WKT polygon to search within",
-    )
-    p.add_argument(
-        "--start",
-        help="Starting date for query (recommended: YYYY-MM-DD)",
-    )
-    p.add_argument(
-        "--end",
-        help="Ending date for query (recommended: YYYY-MM-DD)",
-    )
-    p.add_argument(
-        "--relativeOrbit",
-        type=int,
-        help="Limit to one path / relativeOrbit",
-    )
-    p.add_argument(
-        "--flightDirection",
-        type=str.upper,
-        help="Satellite orbit direction during acquisition",
-        choices=["A", "D", "ASCENDING", "DESCENDING"],
-    )
-    p.add_argument(
-        "--maxResults",
-        type=int,
-        default=2000,
-        help="Limit of number of products to download (default=%(default)s)",
-    )
-    p.add_argument(
-        "--query-only",
-        action="store_true",
-        help="display available data in format of --query-file, no download",
-    )
-    args = p.parse_args()
-
-    q = ASFQuery(**vars(args))
-    if args.query_only:
-        q.query_only()
-    else:
-        q.download_data()
+    def existing_safes(self) -> list[Path]:
+        """Return any SAFEs already present in `out_dir` (does not query ASF)."""
+        return sorted(self.out_dir.glob("S1[AB]_*.SAFE"))
 
 
-def _unzip_one(filepath: Filename, pol: str = "vv", out_dir=Path(".")):
-    """Unzip one Sentinel-1 zip file."""
-    if pol is None:
-        pol = ""
-    with zipfile.ZipFile(filepath, "r") as zipref:
-        # Get the list of files in the zip
-        names_to_extract = [
-            fp for fp in zipref.namelist() if pol.lower() in str(fp).lower()
-        ]
-        zipref.extractall(path=out_dir, members=names_to_extract)
+def _filter_by_flight_direction(
+    safes: list[Path], flight_direction: FlightDirection
+) -> list[Path]:
+    """Drop SAFEs whose first manifest does not match `flight_direction`.
 
+    burst2safe does not expose a flight-direction filter directly. We can
+    cheaply infer it from the manifest.safe inside the .SAFE bundle.
+    """
+    import xml.etree.ElementTree as ET
 
-def delete_tiffs_within_zip(data_path: Filename, pol: str = "vh"):
-    """Delete (in place) the tiff files within a zip file matching `pol`."""
-    cmd = f"""find {data_path} -name "S*.zip" | xargs -I{{}} -n1 -P4 zip -d {{}} '*-vh-*.tiff'"""  # noqa
-    logger.info(cmd)
-    subprocess.run(cmd, shell=True, check=True)
-
-
-if __name__ == "__main__":
-    cli()
+    keep: list[Path] = []
+    for s in safes:
+        manifest = s / "manifest.safe"
+        if not manifest.exists():
+            keep.append(s)
+            continue
+        try:
+            tree = ET.parse(manifest)
+        except ET.ParseError as e:
+            logger.warning(f"Could not parse {manifest}: {e}; keeping SAFE.")
+            keep.append(s)
+            continue
+        text = ET.tostring(tree.getroot(), encoding="unicode")
+        upper = flight_direction.upper()
+        if upper in text.upper():
+            keep.append(s)
+        else:
+            logger.info(f"Dropping {s.name}: not {upper}")
+    return keep

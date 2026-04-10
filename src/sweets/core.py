@@ -1,11 +1,14 @@
 """End-to-end Sentinel-1 InSAR workflow.
 
-Three stages:
+Two source paths share the same downstream pipeline:
 
-1. **Download** the bursts that cover the AOI (small bbox), using burst2safe.
-2. **Geocode** each burst into an OPERA-style geocoded SLC, using COMPASS.
-3. **Run dolphin** to phase-link, form interferograms, stitch, unwrap, and
-   invert a displacement timeseries.
+- ``BurstSearch`` (default): download burst-trimmed S1 SAFEs via burst2safe,
+  geocode them with COMPASS, then run dolphin.
+- ``OperaCslcSearch``: download pre-made OPERA CSLCs from ASF (skips COMPASS,
+  locked to OPERA's posting), then run dolphin.
+
+Optional post-step: tropospheric correction using OPERA L4 TROPO-ZENITH
+products via opera_utils.tropo.
 
 The workflow is defined as a single :class:`Workflow` Pydantic model that
 can be serialized to / loaded from a ``sweets_config.yaml``.
@@ -16,14 +19,12 @@ from __future__ import annotations
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, wait
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional, Union
 
-from dolphin.utils import set_num_threads
-from dolphin.workflows.config import YamlModel
-from opera_utils import group_by_burst
-from pydantic import ConfigDict, Field, computed_field, field_validator, model_validator
-from shapely import geometry, wkt as shp_wkt
-
+# Side-effect import: monkey-patches dolphin's YamlModel walker to handle
+# the new Workflow.search Union of submodels. Must come before any
+# `from dolphin.workflows.config import YamlModel`.
+from . import _dolphin_yaml_compat  # noqa: F401
 from ._burst_db import get_burst_db
 from ._dolphin import DolphinOptions, run_displacement
 from ._geocode_slcs import create_config_files, run_geocode, run_static_layers
@@ -31,12 +32,24 @@ from ._geometry import stitch_geometry
 from ._log import get_log, log_runtime
 from ._netrc import setup_nasa_netrc
 from ._orbit import download_orbits
+from ._tropo import TropoOptions, run_tropo_correction
 from ._types import Filename
 from .dem import create_dem, create_water_mask
-from .download import BurstSearch
+from .download import BurstSearch, OperaCslcSearch
+from dolphin.utils import set_num_threads
+from dolphin.workflows.config import YamlModel
+from opera_utils import group_by_burst
+from pydantic import ConfigDict, Field, computed_field, field_validator, model_validator
+from shapely import geometry, wkt as shp_wkt
 
 if TYPE_CHECKING:
     from dolphin.workflows.displacement import OutputPaths
+
+# Tagged union: each variant carries a Literal[...] `kind` field, so Pydantic
+# can still dispatch on it during validation, but the JSON schema is a plain
+# `anyOf` rather than a discriminated `oneOf` (which dolphin's YamlModel
+# walker doesn't yet handle).
+Source = Union[BurstSearch, OperaCslcSearch]
 
 logger = get_log(__name__)
 
@@ -62,9 +75,13 @@ class Workflow(YamlModel):
         description="AOI as a WKT polygon (or path to a `.wkt` file). Overrides bbox.",
     )
 
-    search: BurstSearch = Field(
+    search: Source = Field(
         ...,
-        description="Burst search / download configuration.",
+        description=(
+            "Source of input SLCs. Either a `BurstSearch` (raw S1 bursts via"
+            " burst2safe + COMPASS) or an `OperaCslcSearch` (pre-made OPERA"
+            " CSLCs); discriminated by the `kind` field."
+        ),
     )
 
     dem_filename: Path = Field(
@@ -99,6 +116,15 @@ class Workflow(YamlModel):
     dolphin: DolphinOptions = Field(
         default_factory=DolphinOptions,
         description="Configuration for the dolphin displacement workflow.",
+    )
+
+    tropo: TropoOptions = Field(
+        default_factory=TropoOptions,
+        description=(
+            "Configuration for the optional tropospheric correction step that"
+            " runs after dolphin. Off by default; set `tropo.enabled = true`"
+            " (or pass `--do-tropo` on the CLI) to turn it on."
+        ),
     )
 
     n_workers: int = Field(
@@ -144,22 +170,27 @@ class Workflow(YamlModel):
     @model_validator(mode="before")
     @classmethod
     def _sync_aoi(cls, values: Any) -> Any:
-        """Push the top-level bbox/wkt down into the BurstSearch.
+        """Push the top-level bbox/wkt down into the search source.
 
         The outer ``Workflow.bbox`` / ``Workflow.wkt`` are the canonical AOI;
-        the nested ``search`` field gets the same bbox so burst2safe knows
-        what to download. Only ``bbox`` is forced — ``search.wkt`` is left
-        alone so non-rectangular search polygons can be specified at the
-        BurstSearch level if a user wants.
+        the nested ``search`` field (either BurstSearch or OperaCslcSearch)
+        gets the same bbox so the downloader knows what to fetch. Only
+        ``bbox`` is forced — ``search.wkt`` is left alone so non-rectangular
+        search polygons can be specified at the source level if a user wants.
+
+        If ``search`` is provided as a dict without ``kind``, default to
+        ``"safe"`` for backwards compatibility with existing configs.
         """
         if not isinstance(values, dict):
             return values
         if "search" not in values:
             values["search"] = {}
-        elif isinstance(values["search"], BurstSearch):
+        elif isinstance(values["search"], (BurstSearch, OperaCslcSearch)):
             values["search"] = values["search"].model_dump(
                 exclude_unset=True, by_alias=True
             )
+        if isinstance(values["search"], dict) and "kind" not in values["search"]:
+            values["search"]["kind"] = "safe"
         outer_bbox = values.get("bbox")
         outer_wkt = values.get("wkt")
         inner = values["search"]
@@ -248,6 +279,9 @@ class Workflow(YamlModel):
     # ------------------------------------------------------------------
 
     def _existing_safes(self) -> list[Path]:
+        # Only meaningful for the BurstSearch path; OperaCslcSearch doesn't
+        # produce SAFE directories.
+        assert isinstance(self.search, BurstSearch)
         return self.search.existing_safes()
 
     # COMPASS-written CSLC HDF5s are tens to hundreds of MB. A 6-KB shell is
@@ -257,6 +291,17 @@ class Workflow(YamlModel):
     _MIN_VALID_GSLC_BYTES = 1 * 1024 * 1024
 
     def _existing_gslcs(self) -> list[Path]:
+        """Return on-disk CSLCs from either the COMPASS or OPERA path.
+
+        - BurstSearch: COMPASS-written burst-organized HDF5s under gslc_dir.
+        - OperaCslcSearch: pre-made OPERA CSLCs under search.out_dir.
+        """
+        if isinstance(self.search, OperaCslcSearch):
+            return [
+                p
+                for p in self.search.existing_cslcs()
+                if p.stat().st_size >= self._MIN_VALID_GSLC_BYTES
+            ]
         return [
             p
             for p in sorted(self.gslc_dir.glob("t*/*/t*.h5"))
@@ -265,10 +310,26 @@ class Workflow(YamlModel):
         ]
 
     def _existing_static_layers(self) -> list[Path]:
+        if isinstance(self.search, OperaCslcSearch):
+            return self.search.existing_static_layers()
         return sorted(self.gslc_dir.glob("t*/*/static_*.h5"))
 
     @log_runtime
     def _download(self) -> list[Path]:
+        if isinstance(self.search, OperaCslcSearch):
+            existing = self.search.existing_cslcs()
+            if existing and not self.overwrite:
+                logger.info(
+                    f"Found {len(existing)} existing OPERA CSLCs in"
+                    f" {self.search.out_dir}; skipping ASF download."
+                )
+            else:
+                self.search.download()
+            # Always make sure static layers are present too.
+            if not self.search.existing_static_layers() or self.overwrite:
+                self.search.download_static_layers()
+            return self.search.existing_cslcs()
+
         existing = self._existing_safes()
         if existing and not self.overwrite:
             logger.info(
@@ -372,7 +433,8 @@ class Workflow(YamlModel):
         ----------
         starting_step : int
             Skip earlier stages if intermediate outputs are already on disk.
-            ``1`` = download, ``2`` = geocode, ``3`` = dolphin.
+            ``1`` = download, ``2`` = geocode (BurstSearch only, OPERA path
+            stitches geometry directly), ``3`` = dolphin.
 
         Returns
         -------
@@ -385,43 +447,99 @@ class Workflow(YamlModel):
         self.work_dir.mkdir(parents=True, exist_ok=True)
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
+        is_opera = isinstance(self.search, OperaCslcSearch)
+
+        # ---- Step 1: download (DEM, water mask, burst DB, source SLCs) ----
         if starting_step <= 1:
             with ThreadPoolExecutor(max_workers=4) as pool:
                 dem_fut = pool.submit(create_dem, self.dem_filename, self._dem_bbox)
                 mask_fut = pool.submit(
                     create_water_mask, self.water_mask_filename, self._dem_bbox
                 )
-                burst_db_fut = pool.submit(get_burst_db)
-                wait([dem_fut, mask_fut, burst_db_fut])
+                # burst-db is only needed by COMPASS; skip it for OPERA path.
+                burst_db_fut = None if is_opera else pool.submit(get_burst_db)
+                futures: list = [dem_fut, mask_fut]
+                if burst_db_fut is not None:
+                    futures.append(burst_db_fut)
+                wait(futures)
                 dem_fut.result()
                 mask_fut.result()
-                burst_db_file = burst_db_fut.result()
+                burst_db_file = burst_db_fut.result() if burst_db_fut else None
             self._download()
         else:
-            burst_db_file = get_burst_db()
+            burst_db_file = None if is_opera else get_burst_db()
 
+        # ---- Step 2: produce CSLCs + stitch geometry ----
         if starting_step <= 2:
-            safes = self._existing_safes()
-            if not safes:
-                msg = (
-                    f"No SAFE directories found in {self.search.out_dir};"
-                    " cannot geocode."
+            if isinstance(self.search, OperaCslcSearch):
+                # OPERA path: pre-made CSLCs, just stitch the static layers.
+                static_files = self._existing_static_layers()
+                if not static_files:
+                    msg = (
+                        f"No CSLC-STATIC layers found in"
+                        f" {self.search.static_layers_dir!s}; cannot stitch geometry."
+                    )
+                    raise RuntimeError(msg)
+                self._stitch_geometry(static_files)
+            else:
+                safes = self._existing_safes()
+                if not safes:
+                    msg = (
+                        f"No SAFE directories found in {self.search.out_dir};"
+                        " cannot geocode."
+                    )
+                    raise RuntimeError(msg)
+                download_orbits(self.search.out_dir, self.orbit_dir)
+                assert burst_db_file is not None
+                _, static_files = self._geocode_slcs(
+                    safes, self.dem_filename, burst_db_file
                 )
-                raise RuntimeError(msg)
-            download_orbits(self.search.out_dir, self.orbit_dir)
-            _, static_files = self._geocode_slcs(
-                safes, self.dem_filename, burst_db_file
-            )
-            self._stitch_geometry(static_files)
+                self._stitch_geometry(static_files)
 
+        # ---- Step 3: dolphin ----
         # Always re-collect GSLCs from disk before dolphin so a starting_step=3
         # run still finds them.
         gslc_files = self._existing_gslcs()
         logger.info(f"Found {len(gslc_files)} GSLC files for dolphin")
         if not gslc_files:
-            msg = f"No GSLCs found in {self.gslc_dir}; cannot run dolphin."
+            where = self.search.out_dir if is_opera else self.gslc_dir
+            msg = f"No GSLCs found in {where}; cannot run dolphin."
             raise RuntimeError(msg)
-        return self._run_dolphin(gslc_files)
+        out_paths = self._run_dolphin(gslc_files)
+
+        # ---- Optional post-step: tropospheric correction ----
+        if self.tropo.enabled:
+            self._run_tropo(gslc_files, out_paths)
+
+        return out_paths
+
+    @log_runtime
+    def _run_tropo(
+        self, gslc_files: list[Path], out_paths: "OutputPaths"
+    ) -> list[Path]:
+        """Apply OPERA L4 TROPO-ZENITH corrections to dolphin's unwrapped phase."""
+        unwrapped_files = list(out_paths.unwrapped_paths or [])
+        if not unwrapped_files:
+            logger.warning(
+                "Tropo correction enabled but dolphin produced no unwrapped"
+                " interferograms; skipping."
+            )
+            return []
+        incidence_path = self.geom_dir / "local_incidence_angle.tif"
+        if not incidence_path.exists():
+            msg = (
+                f"Tropo correction needs the stitched local_incidence_angle"
+                f" raster at {incidence_path}; rerun starting_step=2 first."
+            )
+            raise RuntimeError(msg)
+        return run_tropo_correction(
+            slc_files=gslc_files,
+            unwrapped_files=unwrapped_files,
+            dem_path=self.dem_filename,
+            incidence_angle_path=incidence_path,
+            output_dir=self.dolphin_dir,
+            options=self.tropo,
+        )
 
 
 def _cfg_to_filename(cfg_path: Path) -> str:

@@ -12,7 +12,7 @@ import pytest
 from shapely import wkt
 
 from sweets.core import Workflow
-from sweets.download import BurstSearch
+from sweets.download import BurstSearch, OperaCslcSearch
 
 
 @pytest.fixture
@@ -98,6 +98,39 @@ class TestWorkflow:
         # Longitude swapped
         with pytest.raises(ValueError, match="Longitude"):
             Workflow(bbox=(-9, 30, -10, 31), search=search_kwargs)
+
+    def test_default_kind_is_safe(self, bbox, search_kwargs):
+        """A `search` dict without a `kind` key should default to BurstSearch."""
+        w = Workflow(bbox=bbox, search=search_kwargs)
+        assert isinstance(w.search, BurstSearch)
+        assert w.search.kind == "safe"
+
+    def test_opera_cslc_kind(self, bbox, search_kwargs):
+        """`kind: opera-cslc` should produce an OperaCslcSearch source."""
+        w = Workflow.model_validate(
+            {
+                "bbox": bbox,
+                "search": {"kind": "opera-cslc", **search_kwargs},
+            }
+        )
+        assert isinstance(w.search, OperaCslcSearch)
+        assert w.search.kind == "opera-cslc"
+        # bbox cross-fill still works
+        assert w.search.bbox == bbox
+
+    def test_opera_cslc_yaml_roundtrip(self, tmp_path, bbox, search_kwargs):
+        w = Workflow.model_validate(
+            {
+                "bbox": bbox,
+                "search": {"kind": "opera-cslc", **search_kwargs},
+                "tropo": {"enabled": True},
+            }
+        )
+        out = tmp_path / "config.yaml"
+        w.to_yaml(out, with_comments=True)
+        w2 = Workflow.from_yaml(out)
+        assert isinstance(w2.search, OperaCslcSearch)
+        assert w2.tropo.enabled is True
 
 
 def _iou(poly1, poly2) -> float:

@@ -16,9 +16,11 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 import tyro
+
+SourceKind = Literal["safe", "opera-cslc"]
 
 
 @dataclass
@@ -40,20 +42,26 @@ class ConfigCmd:
     wkt: Optional[str] = None
     """AOI as a WKT polygon string, or path to a .wkt file. Overrides --bbox."""
 
+    source: SourceKind = "safe"
+    """Where the input SLCs come from. `safe` (default) downloads raw S1 bursts via burst2safe and runs COMPASS; `opera-cslc` pulls pre-made OPERA CSLC HDF5s from ASF (skips COMPASS, locked to OPERA's posting)."""
+
     out_dir: Path = field(default_factory=lambda: Path("data"))
-    """Where downloaded SAFE bundles will live."""
+    """Where downloaded SLC inputs (SAFEs or OPERA CSLC HDF5s) will live."""
 
     work_dir: Path = field(default_factory=Path.cwd)
     """Top-level working directory for the workflow."""
 
     polarizations: list[str] = field(default_factory=lambda: ["VV"])
-    """Polarizations to keep (e.g. ['VV'] or ['VV', 'VH'])."""
+    """Polarizations to keep (only honored by --source safe)."""
 
     swaths: Optional[list[str]] = None
-    """Restrict to specific subswaths (e.g. ['IW2']). Default: all that cover the AOI."""
+    """Restrict to specific subswaths (e.g. ['IW2']). Only honored by --source safe."""
 
     n_workers: int = 4
-    """Process pool size for COMPASS geocoding."""
+    """Process pool size for COMPASS geocoding (--source safe only)."""
+
+    do_tropo: bool = False
+    """Run the OPERA L4 TROPO-ZENITH correction step after dolphin (off by default)."""
 
     output: Path = Path("sweets_config.yaml")
     """Where to write the config file."""
@@ -67,20 +75,26 @@ class ConfigCmd:
             print("error: one of --bbox or --wkt is required", file=sys.stderr)
             raise SystemExit(2)
 
+        search: dict = {
+            "kind": self.source,
+            "start": self.start,
+            "end": self.end,
+            "track": self.track,
+            "out_dir": self.out_dir,
+        }
+        # SAFE-only knobs
+        if self.source == "safe":
+            search["polarizations"] = self.polarizations
+            search["swaths"] = self.swaths
+
         workflow = Workflow.model_validate(
             {
                 "bbox": self.bbox,
                 "wkt": self.wkt,
                 "work_dir": self.work_dir,
                 "n_workers": self.n_workers,
-                "search": {
-                    "start": self.start,
-                    "end": self.end,
-                    "track": self.track,
-                    "out_dir": self.out_dir,
-                    "polarizations": self.polarizations,
-                    "swaths": self.swaths,
-                },
+                "search": search,
+                "tropo": {"enabled": self.do_tropo},
             }
         )
         workflow.to_yaml(self.output)

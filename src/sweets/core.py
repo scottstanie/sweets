@@ -90,6 +90,20 @@ class Workflow(YamlModel):
             " Copernicus DEM via sardem."
         ),
     )
+    dem_bbox: Optional[tuple[float, float, float, float]] = Field(
+        default=None,
+        description=(
+            "Optional AOI override for DEM download (left, bottom, right,"
+            " top) in decimal degrees. Use this when the default buffer"
+            " around the study-area `bbox` isn't enough — most commonly,"
+            " when running COMPASS on a `BurstSearch` whose full IW burst"
+            " footprint extends beyond the study area. If unset, sweets"
+            " picks a default: ~1 deg around `bbox` for BurstSearch (large"
+            " enough to cover a full IW burst) and ~0.25 deg around `bbox`"
+            " for NISAR / OPERA-CSLC sources (which are already geocoded"
+            " and only need the DEM for tropo + water-mask context)."
+        ),
+    )
     water_mask_filename: Path = Field(
         default_factory=lambda data: data["work_dir"] / "watermask.tif",
         description=(
@@ -255,15 +269,55 @@ class Workflow(YamlModel):
     def dolphin_dir(self) -> Path:
         return self.work_dir / "dolphin"
 
+    # Buffer (deg) padded around `bbox` when deriving an implicit DEM / water-
+    # mask extent. The BurstSearch value is large enough to cover the full
+    # footprint of any IW burst (~20 x 85 km) regardless of where within the
+    # burst the study area sits; COMPASS geocoding needs DEM coverage for the
+    # whole burst, not just the crop area. All other sources consume the DEM
+    # only for water masking + tropo context, so the study area + a small
+    # buffer is plenty.
+    _DEM_BUFFER_DEG_BURST = 1.0
+    _DEM_BUFFER_DEG_DEFAULT = 0.25
+
+    def _pad_bbox(
+        self, bbox: tuple[float, float, float, float], buf_deg: float
+    ) -> tuple[float, float, float, float]:
+        return (
+            bbox[0] - buf_deg,
+            bbox[1] - buf_deg,
+            bbox[2] + buf_deg,
+            bbox[3] + buf_deg,
+        )
+
     @property
     def _dem_bbox(self) -> tuple[float, float, float, float]:
+        """Bbox passed to ``sardem`` when creating the DEM.
+
+        Priority: user-set ``dem_bbox`` > BurstSearch default (~1 deg buffer)
+        > everything-else default (~0.25 deg buffer). COMPASS needs DEM
+        coverage for the full IW burst extent, not just the study area, so
+        the BurstSearch buffer has to be big enough to absorb a whole burst.
+        """
+        if self.dem_bbox is not None:
+            return self.dem_bbox
         assert self.bbox is not None
-        return (
-            self.bbox[0] - 0.25,
-            self.bbox[1] - 0.25,
-            self.bbox[2] + 0.25,
-            self.bbox[3] + 0.25,
+        buf = (
+            self._DEM_BUFFER_DEG_BURST
+            if isinstance(self.search, BurstSearch)
+            else self._DEM_BUFFER_DEG_DEFAULT
         )
+        return self._pad_bbox(self.bbox, buf)
+
+    @property
+    def _water_mask_bbox(self) -> tuple[float, float, float, float]:
+        """Bbox passed to the ASF water-mask tile mosaic.
+
+        Always study-area-scoped: the water mask is only evaluated inside
+        the dolphin bounds, and oversizing it would just waste tile
+        downloads on the BurstSearch path (where ``_dem_bbox`` is large).
+        """
+        assert self.bbox is not None
+        return self._pad_bbox(self.bbox, self._DEM_BUFFER_DEG_DEFAULT)
 
     # ------------------------------------------------------------------
     # Persistence helpers
@@ -302,6 +356,11 @@ class Workflow(YamlModel):
         - BurstSearch: COMPASS-written burst-organized HDF5s under gslc_dir.
         - OperaCslcSearch: pre-made OPERA CSLCs under search.out_dir.
         - NisarGslcSearch: pre-made NISAR GSLC HDF5s under search.out_dir.
+          Each candidate is opened to confirm it actually carries the
+          expected `/science/LSAR/GSLC/grids/frequency<X>` group — opera-
+          utils' subsetter writes a metadata-only stub when the requested
+          bbox doesn't intersect a product, and dolphin would crash on
+          those.
         """
         if isinstance(self.search, OperaCslcSearch):
             return [
@@ -310,11 +369,31 @@ class Workflow(YamlModel):
                 if p.stat().st_size >= self._MIN_VALID_GSLC_BYTES
             ]
         if isinstance(self.search, NisarGslcSearch):
-            return [
-                p
-                for p in self.search.existing_files()
-                if p.stat().st_size >= self._MIN_VALID_GSLC_BYTES
-            ]
+            # NisarGslcSearch.existing_files() returns the per-polarization
+            # CFloat32 GeoTIFFs that sweets writes alongside each downloaded
+            # subset HDF5. Validate that each one has a real (non-identity)
+            # geotransform — that's the marker that conversion succeeded.
+            import rasterio
+
+            valid: list[Path] = []
+            for p in self.search.existing_files():
+                if p.stat().st_size < self._MIN_VALID_GSLC_BYTES:
+                    logger.warning(
+                        f"Dropping {p.name}: only {p.stat().st_size} bytes;"
+                        f" likely a degenerate conversion."
+                    )
+                    continue
+                try:
+                    with rasterio.open(p) as src:
+                        if src.transform.a == 1.0 and src.transform.e == 1.0:
+                            raise RuntimeError("identity geotransform")
+                        if src.crs is None:
+                            raise RuntimeError("no CRS")
+                except Exception as e:
+                    logger.warning(f"Dropping {p.name}: not a valid raster ({e}).")
+                    continue
+                valid.append(p)
+            return valid
         return [
             p
             for p in sorted(self.gslc_dir.glob("t*/*/t*.h5"))
@@ -439,12 +518,16 @@ class Workflow(YamlModel):
     def _dolphin_subdataset(self) -> str:
         """Pick the right HDF5 subdataset path for the current source.
 
-        NISAR GSLCs live at ``/science/LSAR/GSLC/grids/frequency{A,B}/{POL}``
-        (computed by ``NisarGslcSearch.hdf5_subdataset``); COMPASS / OPERA
-        CSLCs default to ``/data/VV``.
+        - COMPASS / OPERA CSLCs are HDF5 files; dolphin reads them via
+          ``input_options.subdataset = /data/VV``.
+        - NISAR GSLCs are pre-converted by sweets into per-polarization
+          CFloat32 GeoTIFFs (because GDAL's HDF5 driver can't get a real
+          geotransform from a NISAR HDF5 subdataset). dolphin opens
+          GeoTIFFs natively and ignores ``subdataset`` for raster inputs,
+          so the value is just a placeholder.
         """
         if isinstance(self.search, NisarGslcSearch):
-            return self.search.hdf5_subdataset()
+            return "/unused-for-raster-inputs"
         return "/data/VV"
 
     @log_runtime
@@ -497,7 +580,9 @@ class Workflow(YamlModel):
             with ThreadPoolExecutor(max_workers=4) as pool:
                 dem_fut = pool.submit(create_dem, self.dem_filename, self._dem_bbox)
                 mask_fut = pool.submit(
-                    create_water_mask, self.water_mask_filename, self._dem_bbox
+                    create_water_mask,
+                    self.water_mask_filename,
+                    self._water_mask_bbox,
                 )
                 # burst-db is only needed by COMPASS.
                 burst_db_fut = pool.submit(get_burst_db) if needs_compass else None
@@ -559,6 +644,15 @@ class Workflow(YamlModel):
                 else self.gslc_dir
             )
             msg = f"No GSLCs found in {where}; cannot run dolphin."
+            raise RuntimeError(msg)
+        if len(gslc_files) < 2:
+            msg = (
+                f"Only 1 GSLC survived for dolphin ({gslc_files[0].name});"
+                " need at least 2 to form an interferogram. Widen the date"
+                " range, pick a different track/frame, or drop the"
+                " `frequency` / `polarizations` pins so sweets can auto-"
+                "select whichever signature actually has a coherent stack."
+            )
             raise RuntimeError(msg)
         out_paths = self._run_dolphin(gslc_files)
 

@@ -16,6 +16,7 @@ can be serialized to / loaded from a ``sweets_config.yaml``.
 
 from __future__ import annotations
 
+import shutil
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, wait
 from functools import partial
 from pathlib import Path
@@ -404,52 +405,94 @@ class Workflow(YamlModel):
             return []
         return sorted(self.gslc_dir.glob("t*/*/static_*.h5"))
 
-    def _drop_short_burst_stacks(
-        self, gslc_files: list[Path], *, min_dates: int
-    ) -> list[Path]:
-        """Drop any burst whose per-burst stack has fewer than `min_dates` dates.
+    def _gslc_root(self) -> Path:
+        """Return the directory we consider the 'root' of downloaded GSLCs.
 
-        dolphin groups the incoming `cslc_file_list` by burst id and runs
-        each burst stack as its own wrapped-phase + interferogram-network
-        task, so a single undersized burst (e.g. the edge of the AOI
-        that only catches one date on an adjacent burst) will crash the
-        entire workflow. Filter those out here and log what was dropped.
-
-        Burst grouping is delegated to `opera_utils.group_by_burst`,
-        which handles both COMPASS-style burst paths and OPERA-CSLC
-        granule names. NISAR GSLCs are not burst-organized — they come
-        through as a flat stack and the function no-ops for them.
+        Used by `_apply_missing_data_filter` to compute relative paths
+        for files that get moved into the excluded-CSLCs debug folder.
         """
-        from opera_utils import group_by_burst
+        if isinstance(self.search, (OperaCslcSearch, NisarGslcSearch)):
+            return self.search.out_dir
+        return self.gslc_dir
 
+    def _apply_missing_data_filter(self, gslc_files: list[Path]) -> list[Path]:
+        """Keep only the largest spatially-consistent (burst_id, date) subset.
+
+        Runs `opera_utils.missing_data.get_missing_data_options` to
+        enumerate every (set of burst IDs, set of dates) subset where
+        *every* chosen burst has *every* chosen date. The top option
+        maximizes total bursts under that constraint — i.e. we keep the
+        widest stack where dolphin can form a coherent network without
+        spatial discontinuities from bursts-with-missing-dates.
+
+        Files that aren't in the top option get moved (not deleted) to
+        `<work_dir>/excluded_cslcs/...` preserving their relative path
+        from the gslc root. That way a debugging user can pull them
+        back if they want the raw download.
+
+        NISAR GSLCs aren't burst-organized so this is a no-op for the
+        NisarGslcSearch source — its `_download_group` already handles
+        coverage selection via `_rank_signatures`.
+        """
         if isinstance(self.search, NisarGslcSearch):
             return gslc_files
-
-        try:
-            grouped = group_by_burst(gslc_files)
-        except Exception as e:
-            logger.warning(f"group_by_burst failed ({e}); skipping short-stack filter.")
+        if len(gslc_files) < 2:
             return gslc_files
 
-        kept: list[Path] = []
-        dropped_bursts: list[tuple[str, int]] = []
-        for burst_id, files in grouped.items():
-            if len(files) < min_dates:
-                dropped_bursts.append((burst_id, len(files)))
-                continue
-            kept.extend(files)
+        from opera_utils.missing_data import (
+            get_missing_data_options,
+            print_with_rich,
+        )
 
-        if dropped_bursts:
-            for burst_id, n in dropped_bursts:
-                logger.warning(
-                    f"Dropping burst {burst_id}: only {n} GSLC(s), need"
-                    f" {min_dates} to form an interferogram."
-                )
-            logger.info(
-                f"After short-stack filter: {len(kept)} GSLC(s) across"
-                f" {len(grouped) - len(dropped_bursts)} burst(s)."
+        try:
+            options = get_missing_data_options(
+                slc_files=[str(p) for p in gslc_files],
             )
-        return sorted(kept)
+        except Exception as e:
+            logger.warning(
+                f"get_missing_data_options failed ({e}); skipping"
+                " missing-data filter."
+            )
+            return gslc_files
+        if not options:
+            logger.warning("No missing-data options returned; skipping filter.")
+            return gslc_files
+
+        top = options[0]
+        if top.num_candidate_bursts == top.total_num_bursts:
+            logger.info(
+                f"Missing-data filter: all {top.total_num_bursts} CSLCs form a"
+                f" complete {top.num_burst_ids}-burst × {top.num_dates}-date"
+                " stack; nothing to exclude."
+            )
+            return gslc_files
+
+        logger.info(f"Missing-data filter: {len(options)} consistent subset option(s).")
+        print_with_rich(options, use_stderr=False)
+        logger.info(
+            f"Keeping option #1: {top.num_burst_ids} burst(s) ×"
+            f" {top.num_dates} date(s) = {top.total_num_bursts} CSLCs"
+            f" (excluding {top.num_candidate_bursts - top.total_num_bursts}"
+            " partial-coverage CSLCs)."
+        )
+
+        kept_set = {Path(p) for p in top.inputs}
+        to_exclude = [p for p in gslc_files if p not in kept_set]
+
+        root = self._gslc_root().resolve()
+        excluded_dir = (self.work_dir / "excluded_cslcs").resolve()
+        for f in to_exclude:
+            src = f.resolve()
+            try:
+                rel = src.relative_to(root)
+            except ValueError:
+                rel = Path(src.name)
+            dst = excluded_dir / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            logger.warning(f"Excluding {rel} -> excluded_cslcs/{rel}")
+            shutil.move(str(src), str(dst))
+
+        return sorted(kept_set)
 
     @log_runtime
     def _download(self) -> list[Path]:
@@ -702,15 +745,14 @@ class Workflow(YamlModel):
             msg = f"No GSLCs found in {where}; cannot run dolphin."
             raise RuntimeError(msg)
 
-        # Drop any burst whose per-burst stack is too short to form an
-        # interferogram. dolphin groups the `cslc_file_list` by burst id
-        # internally and runs each stack separately, so a single 1-SLC
-        # burst crashes the whole workflow with the opaque "No valid ifg
-        # list generation method specified". This can happen on a
-        # BurstSearch / OperaCslcSearch path whenever the AOI nicks the
-        # edge of an adjacent burst that only has a single in-window
-        # acquisition.
-        gslc_files = self._drop_short_burst_stacks(gslc_files, min_dates=2)
+        # Trim the stack to the largest spatially-consistent (burst,
+        # date) subset — any burst missing one or more of the chosen
+        # dates gets moved out to `excluded_cslcs/`. Keeps dolphin from
+        # forming a network across partially-covered bursts (which
+        # produces spatial discontinuities in the displacement field)
+        # and from crashing on 1-SLC per-burst stacks like the one
+        # that bit the BurstSearch path with a burst-boundary AOI.
+        gslc_files = self._apply_missing_data_filter(gslc_files)
 
         if len(gslc_files) < 2:
             msg = (

@@ -49,6 +49,33 @@
 - `scripts/prep_mintpy.py` (broken with the new layout; mintpy export is
   TODO via dolphin's existing exporters).
 
+**Added**
+- **Missing-data filter.** New `Workflow._apply_missing_data_filter`
+  wraps `opera_utils.missing_data.get_missing_data_options` to
+  enumerate every `(burst_ids, dates)` subset where every chosen
+  burst has every chosen date, and picks the one that maximizes
+  total CSLC count. Files that aren't in the top option get moved
+  (not deleted) to `<work_dir>/excluded_cslcs/<burst_id>/<date>/` so
+  a debugging user can pull them back. Runs post-COMPASS on
+  BurstSearch (OPERA-style `t071_151230_iw2` naming is what
+  `group_by_burst` expects), and post-download on OperaCslcSearch.
+  No-op on NisarGslcSearch (not burst-organized; `_rank_signatures`
+  handles coverage there). Replaces an earlier simpler
+  `_drop_short_burst_stacks` heuristic, and keeps dolphin from
+  forming a network across partial-coverage bursts — the prior
+  failure mode was an opaque dolphin crash deep inside
+  `interferogram.Network._make_ifg_pairs` when a bbox nicked the
+  edge of a second burst.
+- **Example notebooks, one per source plus a cross-source comparison**,
+  under `docs/`. All four share the same LA AOI + Dec 2025 window
+  so runs can be compared directly:
+  - `example_s1_burst.ipynb` — burst-subset S1 + COMPASS + dolphin
+  - `example_opera_cslc.ipynb` — pre-made OPERA CSLCs from ASF
+  - `example_nisar.ipynb` — NISAR GSLC via CMR, VRT-wrapped for dolphin
+  - `example_compare_sources.ipynb` — loads the longest-baseline
+    timeseries raster from each run and plots them side-by-side with
+    a uniform color scale.
+
 **Fixed**
 - **NISAR VRT wrappers instead of GeoTIFF rewrite.** GDAL's HDF5 driver
   can't parse NISAR's separate `xCoordinates` / `yCoordinates` grid

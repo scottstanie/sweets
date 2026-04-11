@@ -3,6 +3,102 @@
 A breadcrumb file for the v0.2-rewrite branch — what changed, what's still
 loose, and where to look next.
 
+## PR summary (drop into the PR description)
+
+**One-liner**: three interchangeable InSAR input sources (burst-subset S1 +
+COMPASS, OPERA CSLC, NISAR GSLC) feeding a single `dolphin.workflows.displacement.run`
+call, with coverage-aware filtering and a meters-per-year output on every path.
+
+**Headline features**
+- Three sources behind a Pydantic discriminated union (`BurstSearch`,
+  `OperaCslcSearch`, `NisarGslcSearch`) — pick with `--source safe |
+  opera-cslc | nisar-gslc`, same downstream pipeline, same output layout.
+- Burst-subset S1 downloads via `burst2safe` instead of full frames.
+- Optional tropospheric correction post-step (`--do-tropo`) wrapping
+  OPERA L4 TROPO-ZENITH.
+- `tyro` CLI with three subcommands (`config`, `run`, `server`).
+- pixi-first packaging; `[tool.pixi.*]` is the canonical env definition.
+- All phase-linking / ifg-network / unwrap / timeseries /
+  velocity work is delegated to `dolphin.workflows.displacement.run`
+  — the hand-rolled `sweets.interferogram` / stitching / unwrap
+  orchestration is gone.
+
+**Coverage-aware filtering** (the piece that most directly affects
+output quality)
+- `Workflow._apply_missing_data_filter` trims the GSLC stack to the
+  widest `(burst_ids, dates)` subset where every chosen burst has
+  every chosen date. Keeps dolphin from forming a network across
+  partial-coverage bursts (which causes spatial discontinuities in
+  the displacement field), and catches the "AOI nicks the edge of
+  an adjacent burst that only has one in-window acquisition"
+  footgun. Excluded files get moved to `<work_dir>/excluded_cslcs/`
+  so they can be recovered.
+- Source-aware DEM bbox: BurstSearch uses a 1 deg pad around the
+  study bbox so COMPASS sees the full IW burst footprint; NISAR /
+  OPERA keep the 0.25 deg pad; user can override with `dem_bbox`.
+  Water-mask downloads stay on the study-area bbox regardless.
+- Min-GSLC and no-coverage guards that raise clear sweets-side
+  errors instead of letting dolphin crash deep in
+  `interferogram.Network._make_ifg_pairs`.
+
+**NISAR path detail** (since it's the most novel)
+- `NisarGslcSearch` ranks `(frequency, polarization)` signatures by
+  `(stack size, pol match, freq match)` and falls through to the
+  next signature if the best group's products all yield empty stubs
+  (bbox inside the bounding polygon but outside the actual grid
+  extent — common on BETA PR products).
+- Each subsetted HDF5 gets wrapped in a ~1 KB VRT that injects the
+  real UTM geotransform on top of the raw HDF5 subdataset. NISAR
+  stores its grid as separate `xCoordinates` / `yCoordinates` arrays
+  with no CF metadata, so GDAL's HDF5 driver reports an identity
+  geotransform without the VRT — the wrapper is what lets dolphin
+  treat NISAR rasters like any other georeferenced input without
+  any NISAR-specific override knobs.
+- Radar wavelength is resolved in three tiers:
+  (1) read `centerFrequency` straight from the HDF5 when present
+  (distinguishes freqA from freqB exactly);
+  (2) fall back to `NISAR_L_MODE_CENTERS_HZ` per NISAR D-102269
+  Figure 3-1, keyed by the MODE code in the granule filename
+  (close to ~0.8%, strictly better than the generic constant for
+  split modes);
+  (3) fall back to the generic band constant from the `NISAR_L*` /
+  `NISAR_S*` filename prefix.
+  Without this fix, NISAR timeseries outputs landed in radians
+  instead of meters (isce-framework/dolphin#704).
+
+**Fork pins** (all `scottstanie/<repo>@develop-scott`)
+- **dolphin**: NISAR wavelength auto-detect + fixed `NISAR_L_FREQUENCY`
+  constant; HDF5 vs NETCDF driver split by filename prefix; stitching
+  path preserves GDAL subdataset strings instead of running them
+  through `Path()`; yaml Union schema fix.
+- **opera-utils**: HDF5/NETCDF driver split; `_extract_subset_from_h5`
+  now preserves `centerFrequency` + bandwidth scalars (skipping 2D
+  rasters like `mask` which would pull multi-GB over HTTP);
+  Float16 GTIFF_KWARGS fix; CMR tropo + NISAR download APIs.
+- **COMPASS**: numpy 2 `np.string_` / `np.unicode_` shims.
+- **s1-reader**: numpy 2 polyfit scalar regression.
+- **sarlet**: corrected `SENSOR_WAVELENGTHS["NISAR"]` to match UAVSAR.
+
+**Docs + smoke testing**
+- `docs/` ships four runnable notebooks: one per source plus a
+  cross-source comparison, all sharing the same Long Beach / San
+  Pedro AOI (`-118.3957 33.7284 -118.3459 33.772`) and the same Dec
+  2025 window.
+- Four rounds of end-to-end smoke tests are documented below —
+  pecos (BurstSearch), pecos (OperaCslcSearch + tropo), Salinas
+  (NisarGslcSearch), and the LA cross-source round. Every pipeline
+  produces `velocity.tif` in `meters / year`.
+
+**Closes / addresses**
+- #23 burst-level downloads, #85 `Burst2Safe` compatibility,
+  #88 OPERA CSLC source, #132 numpy 2 regressions, #107 empty GSLC
+  shells, #29 `--starting-step` CLI, #80 `--out-dir` honored
+  end-to-end, #79 dolphin.interferogram removal, #27 searchable
+  ASF query logging.
+- Upstream dolphin issue isce-framework/dolphin#704 (NISAR
+  wavelength + units) is fixed on the dolphin fork; upstream PR
+  still open.
+
 ## What changed
 
 | layer | before | after |

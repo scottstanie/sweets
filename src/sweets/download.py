@@ -923,30 +923,35 @@ class NisarGslcSearch(YamlModel):
         return sorted(self.out_dir.glob("NISAR_L2_*GSLC*.*.vrt"))
 
     def wavelength(self) -> float:
-        """Radar wavelength (m) inferred from the first downloaded HDF5.
+        """Radar wavelength (m) inferred from the first downloaded filename.
 
-        sweets wraps each NISAR HDF5 in a ~1 KB VRT and passes the VRT to
-        dolphin, so dolphin's own h5py-based wavelength auto-detect
-        (which opens the CSLC directly) can't see the radar band. Peek
-        the first on-disk `.h5` here and map its `radarBand` to the
-        matching dolphin constant; the caller forwards the result to
-        `build_displacement_config(wavelength=...)` so timeseries outputs
-        land in meters instead of radians.
+        NISAR filenames follow NISAR D-102269 §3.4: after the `NISAR_`
+        prefix, the first token is instrument + level (`L2` = L-SAR
+        Level 2, `S2` = S-SAR Level 2). String-matching the prefix is
+        cheaper than opening the HDF5 and works equally well on the
+        raw `.h5`, the sweets `.vrt` wrapper, or any other rename that
+        preserves the granule prefix. The BETA PR products don't store
+        a center-frequency dataset anywhere in the HDF5, so there's
+        nothing to read from inside the file anyway.
+
+        NOTE: L-band frequencyA and frequencyB centers differ by ~1%,
+        but sweets always downloads a single-frequency stack so they
+        never mix, and the constant matches frequencyA which is what
+        every current product ships. Revisit if freqB-only products
+        appear or mm-accurate displacement becomes important.
         """
-        import h5py
         from dolphin import constants
 
-        h5_files = sorted(self.out_dir.glob("NISAR_L2_*GSLC*.h5"))
-        assert h5_files, f"No NISAR .h5 files in {self.out_dir}; run download() first"
-        with h5py.File(h5_files[0], "r") as hf:
-            raw = hf["/science/LSAR/identification/radarBand"][()]
-        band = raw.decode() if isinstance(raw, (bytes, bytearray)) else str(raw)
-        band = band.upper()
-        if band == "L":
+        candidates = sorted(self.out_dir.glob("NISAR_*GSLC*.h5"))
+        if not candidates:
+            candidates = self.existing_files()
+        assert candidates, f"No NISAR files in {self.out_dir}; run download() first"
+        stem = candidates[0].name.upper()
+        if stem.startswith("NISAR_L"):
             return constants.NISAR_L_WAVELENGTH
-        if band == "S":
+        if stem.startswith("NISAR_S"):
             return constants.NISAR_S_WAVELENGTH
-        msg = f"Unknown NISAR radarBand {band!r} in {h5_files[0].name}"
+        msg = f"Cannot infer NISAR band from filename {candidates[0].name}"
         raise RuntimeError(msg)
 
 

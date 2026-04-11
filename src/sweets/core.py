@@ -523,21 +523,13 @@ class Workflow(YamlModel):
             return "/unused-for-raster-inputs"
         return "/data/VV"
 
-    def _dolphin_wavelength(self) -> Optional[float]:
-        """Radar wavelength override for the current source, or None.
-
-        dolphin auto-detects S1 from `get_burst_id` and NISAR from HDF5
-        metadata, but the NISAR auto-detect can't see through sweets'
-        VRT wrappers (h5py rejects the XML). Peek the NISAR source's
-        first HDF5 and return the matching constant; other sources let
-        dolphin's auto-detect handle it.
-        """
-        if isinstance(self.search, NisarGslcSearch):
-            return self.search.wavelength()
-        return None
-
     @log_runtime
     def _run_dolphin(self, gslc_files: list[Path]) -> "OutputPaths":
+        # dolphin's displacement workflow infers the radar wavelength from
+        # the first CSLC filename (NISAR_L..., NISAR_S..., OPERA burst IDs,
+        # CAPELLA prefix), so we don't forward it explicitly — the VRT
+        # filenames sweets writes for the NISAR source are named
+        # `NISAR_L2_..._HH.vrt`, which dolphin recognizes as L-band.
         mask = self.water_mask_filename if self.water_mask_filename.exists() else None
         return run_displacement(
             cslc_files=gslc_files,
@@ -547,7 +539,6 @@ class Workflow(YamlModel):
             bounds=self.bbox,
             config_yaml=self.work_dir / "dolphin_config.yaml",
             subdataset=self._dolphin_subdataset(),
-            wavelength=self._dolphin_wavelength(),
         )
 
     # ------------------------------------------------------------------

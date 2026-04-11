@@ -49,6 +49,55 @@
 - `scripts/prep_mintpy.py` (broken with the new layout; mintpy export is
   TODO via dolphin's existing exporters).
 
+**Fixed**
+- **NISAR VRT wrappers instead of GeoTIFF rewrite.** GDAL's HDF5 driver
+  can't parse NISAR's separate `xCoordinates` / `yCoordinates` grid
+  arrays, so sweets used to rewrite each polarization as a ~19 MB
+  CFloat32 GeoTIFF alongside every 40 MB subset HDF5. That's now a
+  ~1 KB VRT that injects the real SRS + GeoTransform on top of the
+  raw HDF5 subdataset — dolphin opens the VRT natively and the HDF5
+  stays the single source of truth for pixel values. Conversion step
+  dropped from O(n_pixels) to O(1).
+- **Explicit NISAR wavelength forwarded to dolphin.** dolphin's own
+  `model_post_init` auto-detect opens the first CSLC with h5py to read
+  `/science/LSAR/identification/radarBand`, which doesn't work when
+  dolphin sees a sweets VRT instead of an HDF5.
+  `NisarGslcSearch.wavelength()` peeks the first downloaded `.h5` and
+  maps its radarBand to the matching `dolphin.constants` value; the
+  new `wavelength=` kwarg on `build_displacement_config` /
+  `run_displacement` forwards it. Without this fix, NISAR timeseries
+  / velocity outputs landed in radians instead of meters
+  (isce-framework/dolphin#704).
+- **NISAR signature ranking + fallback.** `NisarGslcSearch.download()`
+  now ranks (frequency, polarization) groups by `(stack size, pol match,
+  freq match)` so a `polarizations` pin always beats a `frequency` pin
+  on ties, and iterates groups in order — if the best group's products
+  all yield empty stubs (AOI inside the bounding polygon but outside
+  the actual grid extent, common on NISAR PR products), sweets falls
+  through to the next signature instead of silently writing zero
+  GeoTIFFs. Raises a clear diagnostic if every signature is empty.
+- **Source-aware DEM bbox.** `Workflow._dem_bbox` used to pad the study
+  bbox by 0.25 deg for every source, but COMPASS geocoding on the
+  BurstSearch path needs DEM coverage for the full IW burst footprint
+  (~20 x 85 km), not just the study area. BurstSearch now pads by 1 deg;
+  NISAR / OPERA-CSLC keep the 0.25 deg buffer. Users can override with
+  a new optional `dem_bbox` field. Water-mask downloads stay on the
+  study-area bbox so the BurstSearch path doesn't waste ASF tile
+  fetches on terrain outside the crop area.
+- **Min-GSLC guard.** `Workflow.run` now raises a clear error before
+  invoking dolphin when fewer than 2 GSLCs survive step 2, instead of
+  letting dolphin fail deep inside `interferogram._make_ifg_pairs` with
+  "No valid ifg list generation method specified".
+- Driver-prefix heuristic for HDF5 vs NETCDF pushed down into
+  `opera_utils.format_nc_filename` and `opera_utils.create_nodata_mask`
+  (on `scottstanie/opera-utils@develop-scott`) and
+  `dolphin.io.format_nc_filename` (on `scottstanie/dolphin@develop-scott`)
+  so the NISAR raw-HDF5 subdataset path works end-to-end.
+- NISAR wavelength auto-detect + corrected `NISAR_L_FREQUENCY` constant
+  landed on `scottstanie/dolphin@develop-scott`
+  (isce-framework/dolphin#704); parallel NISAR wavelength fix landed on
+  `scottstanie/sarlet`.
+
 
 # [0.2.0](https://github.com/opera-adt/dolphin/compare/v0.2.0...v0.3.0) - 2023-08-23
 

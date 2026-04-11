@@ -95,6 +95,76 @@ loose, and where to look next.
   warns and skips when the source is NISAR. See "What's still loose".
 - **Notebook updates** — out of scope for this swing.
 
+## Smoke test results, round 3 (2026-04-10, NISAR GSLC path)
+
+End-to-end run with `--source nisar-gslc` against several AOIs around
+the Los Angeles / Salinas area, picking up the NISAR PR GSLC BETA V1
+products on CMR. After fixing the issues below, the pipeline runs
+cleanly through search → per-product subset → VRT wrap → dolphin
+phase linking / unwrap / timeseries / velocity in ~23 seconds of
+pipeline wall time for a two-cycle stack on the Salinas AOI, with
+outputs under `dolphin/timeseries/*.tif` and `dolphin/unwrapped/`.
+
+**Bugs caught and fixed during this run** (all on the relevant fork
+branches + the sweets v0.2-rewrite branch):
+
+1. **`_choose_signature` scoring overweighted `frequency` pins.** A
+   config pinning `frequency: A, polarizations: [VV]` picked a single-
+   cycle frequencyA/[HH,HV] group over a single-cycle
+   frequencyB/[VV,VH] group — choosing the one with zero pol overlap.
+   Rewrote as `_rank_signatures` with sort key
+   `(n_cycles, pol_match, freq_match)` so pol pin dominates.
+2. **Chosen signature could yield zero usable GeoTIFFs silently.**
+   NISAR PR products can advertise a frequency whose actual grid
+   extent is narrower than the bounding polygon, so `process_file`'s
+   subset writes a 25 KB metadata-only stub. sweets now iterates
+   ranked signatures in order and falls through to the next one when
+   the current group yields zero outputs, raising a clear error only
+   if every signature is empty.
+3. **Single-GSLC stacks crashed deep inside dolphin.** When only one
+   valid GSLC survived, `interferogram._make_ifg_pairs` bailed with
+   "No valid ifg list generation method specified". Added a guard in
+   `Workflow.run` that raises a clear sweets-side error naming the
+   likely culprits (narrow date range, over-specific pol / frequency
+   pins, wrong track/frame).
+4. **DEM bbox was conflated with crop bbox.** `Workflow._dem_bbox`
+   used a 0.25 deg buffer for every source, but COMPASS geocoding on
+   the BurstSearch path needs DEM coverage for the full IW burst
+   footprint (~20 x 85 km). David Bekaert flagged this mid-debug.
+   Split into source-aware defaults (1 deg for BurstSearch, 0.25 deg
+   for the rest), a separate `_water_mask_bbox` that stays small on
+   BurstSearch, and an optional `Workflow.dem_bbox` override field.
+5. **Empty-stub HDF5 conversion crashed GeoTIFF write.** opera-utils'
+   per-product subset can produce an HDF5 with no `/grids/frequencyX`
+   group when the bbox is outside the actual grid extent. The
+   downstream conversion path now logs a warning + skips instead of
+   aborting the whole stack.
+6. **HDF5 vs NETCDF driver prefix assumed NETCDF.** dolphin and
+   opera-utils both built GDAL connection strings as
+   `NETCDF:"file.h5":"//ds"`, which fails for NISAR's raw HDF5 (no CF
+   metadata). Split by extension: `.h5` → `HDF5:`, `.nc` → `NETCDF:`.
+   Landed on `scottstanie/dolphin@develop-scott`
+   and `scottstanie/opera-utils@develop-scott`.
+7. **NISAR HDF5 -> 19 MB GeoTIFF rewrite was overkill.** GDAL's HDF5
+   driver opens the subdataset but reports an identity geotransform,
+   so the first pass wrote one CFloat32 GeoTIFF per polarization to
+   inject the georeferencing. Replaced with a ~1 KB VRT that wraps the
+   HDF5 subdataset, reading the actual grid from the HDF5 and layering
+   the geotransform on top in XML. Conversion step dropped from
+   O(n_pixels) to O(1).
+8. **Timeseries / velocity outputs were in radians, not meters.**
+   dolphin's `model_post_init` only auto-detected OPERA-S1 and
+   Capella; NISAR fell through with no warning and wrote units as
+   `radians / year`. Landed a dolphin-side h5py-based NISAR auto-
+   detect (reads `/science/LSAR/identification/radarBand`) plus a
+   correct `NISAR_L_FREQUENCY` constant (isce-framework/dolphin#704),
+   AND a sweets-side explicit wavelength forward via
+   `build_displacement_config(wavelength=...)` — dolphin's h5py
+   auto-detect can't see through sweets' VRT wrappers, so sweets peeks
+   the raw `.h5` itself and passes the answer through. Parallel fix
+   for sarlet's `SENSOR_WAVELENGTHS["NISAR"]` (was `C_LIGHT / 1.257e9`,
+   now the precise L-band frequency).
+
 ## Smoke test results, round 2 (2026-04-10, OPERA CSLC + tropo path)
 
 End-to-end run with `--source opera-cslc --do-tropo` against the same

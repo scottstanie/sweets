@@ -404,6 +404,53 @@ class Workflow(YamlModel):
             return []
         return sorted(self.gslc_dir.glob("t*/*/static_*.h5"))
 
+    def _drop_short_burst_stacks(
+        self, gslc_files: list[Path], *, min_dates: int
+    ) -> list[Path]:
+        """Drop any burst whose per-burst stack has fewer than `min_dates` dates.
+
+        dolphin groups the incoming `cslc_file_list` by burst id and runs
+        each burst stack as its own wrapped-phase + interferogram-network
+        task, so a single undersized burst (e.g. the edge of the AOI
+        that only catches one date on an adjacent burst) will crash the
+        entire workflow. Filter those out here and log what was dropped.
+
+        Burst grouping is delegated to `opera_utils.group_by_burst`,
+        which handles both COMPASS-style burst paths and OPERA-CSLC
+        granule names. NISAR GSLCs are not burst-organized — they come
+        through as a flat stack and the function no-ops for them.
+        """
+        from opera_utils import group_by_burst
+
+        if isinstance(self.search, NisarGslcSearch):
+            return gslc_files
+
+        try:
+            grouped = group_by_burst(gslc_files)
+        except Exception as e:
+            logger.warning(f"group_by_burst failed ({e}); skipping short-stack filter.")
+            return gslc_files
+
+        kept: list[Path] = []
+        dropped_bursts: list[tuple[str, int]] = []
+        for burst_id, files in grouped.items():
+            if len(files) < min_dates:
+                dropped_bursts.append((burst_id, len(files)))
+                continue
+            kept.extend(files)
+
+        if dropped_bursts:
+            for burst_id, n in dropped_bursts:
+                logger.warning(
+                    f"Dropping burst {burst_id}: only {n} GSLC(s), need"
+                    f" {min_dates} to form an interferogram."
+                )
+            logger.info(
+                f"After short-stack filter: {len(kept)} GSLC(s) across"
+                f" {len(grouped) - len(dropped_bursts)} burst(s)."
+            )
+        return sorted(kept)
+
     @log_runtime
     def _download(self) -> list[Path]:
         if isinstance(self.search, OperaCslcSearch):
@@ -654,9 +701,20 @@ class Workflow(YamlModel):
             )
             msg = f"No GSLCs found in {where}; cannot run dolphin."
             raise RuntimeError(msg)
+
+        # Drop any burst whose per-burst stack is too short to form an
+        # interferogram. dolphin groups the `cslc_file_list` by burst id
+        # internally and runs each stack separately, so a single 1-SLC
+        # burst crashes the whole workflow with the opaque "No valid ifg
+        # list generation method specified". This can happen on a
+        # BurstSearch / OperaCslcSearch path whenever the AOI nicks the
+        # edge of an adjacent burst that only has a single in-window
+        # acquisition.
+        gslc_files = self._drop_short_burst_stacks(gslc_files, min_dates=2)
+
         if len(gslc_files) < 2:
             msg = (
-                f"Only 1 GSLC survived for dolphin ({gslc_files[0].name});"
+                f"Only 1 usable GSLC survived for dolphin ({gslc_files[0].name});"
                 " need at least 2 to form an interferogram. Widen the date"
                 " range, pick a different track/frame, or drop the"
                 " `frequency` / `polarizations` pins so sweets can auto-"

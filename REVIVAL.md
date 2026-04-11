@@ -101,7 +101,7 @@ loose, and where to look next.
 ## Smoke test results, round 4 (2026-04-11, three-source cross-validation)
 
 End-to-end runs of all three source variants against the same LA AOI
-(`-118.3581 33.7005 -118.2128 33.8316`, Long Beach / San Pedro) and
+(`-118.3957 33.7284 -118.3459 33.772`, Long Beach / San Pedro) and
 the same Dec 2025 window, codified as three self-contained example
 notebooks under `docs/`. Everything passes and the output `velocity.tif`
 comes out in `meters / year` on every path.

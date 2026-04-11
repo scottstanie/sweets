@@ -107,6 +107,14 @@ opera-utils = { git = "https://github.com/scottstanie/opera-utils.git", branch =
 # `Workflow.search: BurstSearch | OperaCslcSearch | NisarGslcSearch`
 # discriminated union.
 dolphin = { git = "https://github.com/scottstanie/dolphin.git", branch = "develop-scott" }
+# scottstanie/spurt@develop-scott is significantly ahead of upstream
+# isce-framework/spurt for temporal phase unwrapping — performance
+# fixes, macOS multiprocessing memory fix, richer logging, reader-
+# interface cleanups. dolphin only pulls `spurt` transitively, so
+# pinning the fork explicitly here gets everyone who sets
+# `dolphin.unwrap_method: spurt` in their sweets config onto the
+# supported version.
+spurt = { git = "https://github.com/scottstanie/spurt.git", branch = "develop-scott" }
 
 [tool.pixi.dependencies]
 python = ">=3.11"

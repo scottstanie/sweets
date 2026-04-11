@@ -523,13 +523,23 @@ class Workflow(YamlModel):
             return "/unused-for-raster-inputs"
         return "/data/VV"
 
+    def _dolphin_wavelength(self) -> Optional[float]:
+        """Wavelength override for dolphin, or None to let dolphin auto-detect.
+
+        For the NISAR source, sweets reads the precise carrier from the
+        HDF5's ``centerFrequency`` dataset when available; this is
+        richer than dolphin's own filename-based fallback (which can
+        only tell L-band from S-band). dolphin's filename parser can't
+        see through sweets' VRT wrappers anyway, so sweets must be the
+        one peeking the HDF5. For every other source, return None and
+        let dolphin's `model_post_init` handle it.
+        """
+        if isinstance(self.search, NisarGslcSearch):
+            return self.search.wavelength()
+        return None
+
     @log_runtime
     def _run_dolphin(self, gslc_files: list[Path]) -> "OutputPaths":
-        # dolphin's displacement workflow infers the radar wavelength from
-        # the first CSLC filename (NISAR_L..., NISAR_S..., OPERA burst IDs,
-        # CAPELLA prefix), so we don't forward it explicitly — the VRT
-        # filenames sweets writes for the NISAR source are named
-        # `NISAR_L2_..._HH.vrt`, which dolphin recognizes as L-band.
         mask = self.water_mask_filename if self.water_mask_filename.exists() else None
         return run_displacement(
             cslc_files=gslc_files,
@@ -539,6 +549,7 @@ class Workflow(YamlModel):
             bounds=self.bbox,
             config_yaml=self.work_dir / "dolphin_config.yaml",
             subdataset=self._dolphin_subdataset(),
+            wavelength=self._dolphin_wavelength(),
         )
 
     # ------------------------------------------------------------------

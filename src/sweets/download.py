@@ -923,29 +923,49 @@ class NisarGslcSearch(YamlModel):
         return sorted(self.out_dir.glob("NISAR_L2_*GSLC*.*.vrt"))
 
     def wavelength(self) -> float:
-        """Radar wavelength (m) inferred from the first downloaded filename.
+        """Radar wavelength (m) for the downloaded stack.
 
-        NISAR filenames follow NISAR D-102269 §3.4: after the `NISAR_`
-        prefix, the first token is instrument + level (`L2` = L-SAR
-        Level 2, `S2` = S-SAR Level 2). String-matching the prefix is
-        cheaper than opening the HDF5 and works equally well on the
-        raw `.h5`, the sweets `.vrt` wrapper, or any other rename that
-        preserves the granule prefix. The BETA PR products don't store
-        a center-frequency dataset anywhere in the HDF5, so there's
-        nothing to read from inside the file anyway.
+        Two-tier strategy:
 
-        NOTE: L-band frequencyA and frequencyB centers differ by ~1%,
-        but sweets always downloads a single-frequency stack so they
-        never mix, and the constant matches frequencyA which is what
-        every current product ships. Revisit if freqB-only products
-        appear or mm-accurate displacement becomes important.
+        1. **Runtime read from the HDF5.** NISAR D-102269 §4 specifies
+           a Float64 scalar ``centerFrequency`` under each
+           ``/science/LSAR/GSLC/grids/frequency{A,B}`` group, carrying
+           the actual carrier of the processed image in Hz. When
+           present, return ``C / centerFrequency`` — this is precise,
+           distinguishes frequencyA from frequencyB automatically, and
+           needs no lookup table to track future band-split modes.
+        2. **Filename fallback.** Current BETA PR products don't
+           populate ``centerFrequency`` yet, so fall back to a coarse
+           constant picked from the NISAR D-102269 §3.4 granule prefix
+           (``NISAR_L*`` -> ``NISAR_L_WAVELENGTH``, ``NISAR_S*`` ->
+           ``NISAR_S_WAVELENGTH``). That matches the full-band
+           frequencyA center and is within ~1% of the split-mode
+           centers — fine for any non-mm-level InSAR workflow.
+
+        The caller forwards the result to
+        ``build_displacement_config(wavelength=...)`` so dolphin writes
+        timeseries outputs in meters instead of radians.
         """
-        from dolphin import constants
+        import h5py
 
-        candidates = sorted(self.out_dir.glob("NISAR_*GSLC*.h5"))
-        if not candidates:
-            candidates = self.existing_files()
+        from dolphin import constants
+        from dolphin.constants import SPEED_OF_LIGHT
+
+        h5_files = sorted(self.out_dir.glob("NISAR_*GSLC*.h5"))
+        candidates = h5_files if h5_files else self.existing_files()
         assert candidates, f"No NISAR files in {self.out_dir}; run download() first"
+
+        if h5_files:
+            with h5py.File(h5_files[0], "r") as hf:
+                for freq_letter in ("A", "B"):
+                    cf_path = (
+                        f"/science/LSAR/GSLC/grids/frequency{freq_letter}"
+                        "/centerFrequency"
+                    )
+                    if cf_path in hf:
+                        center_hz = float(hf[cf_path][()])
+                        return SPEED_OF_LIGHT / center_hz
+
         stem = candidates[0].name.upper()
         if stem.startswith("NISAR_L"):
             return constants.NISAR_L_WAVELENGTH

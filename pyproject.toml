@@ -122,7 +122,10 @@ pip = ">=21.3"
 # Heavy native / conda-only deps. (compass and opera-utils are intentionally
 # NOT here — they come from scottstanie/<repo> via [tool.pixi.pypi-dependencies]
 # above so we get the numpy 2 fixes and the new tropo workflow.)
-isce3 = ">=0.24"
+# isce3 is NOT shared — it lives in the `cpu` / `gpu` features below so
+# users on CUDA Linux boxes can select the `gpu` environment and get
+# isce3-cuda (GPU-accelerated geocoding / crossmul / resampling). Every
+# existing environment folds the `cpu` feature in by default.
 gdal = "*"
 libgdal-netcdf = "*"
 # Pure-python deps mirrored from [project.dependencies] so the env solves
@@ -175,12 +178,30 @@ python-multipart = "*"
 websockets = "*"
 titiler-core = "*"
 
+# CPU (default) isce3 build — works on every platform sweets supports.
+[tool.pixi.feature.cpu.dependencies]
+isce3 = ">=0.24"
+
+# CUDA-accelerated isce3 for geometry / crossmul / resampling. Only
+# available on linux-64; conda-forge doesn't ship osx-arm64 builds.
+# Requires CUDA 12+ on the host. Activate with `pixi shell -e gpu`.
+[tool.pixi.feature.gpu.target.linux-64.dependencies]
+isce3-cuda = ">=0.24"
+
+[tool.pixi.feature.gpu.system-requirements]
+cuda = "12"
+
 [tool.pixi.environments]
-default = { features = ["test", "plotting"], solve-group = "default" }
-test = { features = ["test"], solve-group = "default" }
-plotting = { features = ["plotting"], solve-group = "default" }
-web = { features = ["web", "plotting"], solve-group = "default" }
-minimal = { features = [], solve-group = "default" }
+# `cpu` is folded into every CPU environment so isce3 is always present.
+default = { features = ["test", "plotting", "cpu"], solve-group = "default" }
+test = { features = ["test", "cpu"], solve-group = "default" }
+plotting = { features = ["plotting", "cpu"], solve-group = "default" }
+web = { features = ["web", "plotting", "cpu"], solve-group = "default" }
+minimal = { features = ["cpu"], solve-group = "default" }
+# GPU environment: same extras as `default` but swaps isce3 -> isce3-cuda.
+# `solve-group` is deliberately separate so pixi doesn't try to reconcile
+# the CPU and GPU isce3 builds in a single resolution.
+gpu = { features = ["test", "plotting", "gpu"] }
 
 [tool.setuptools_scm]
 # https://github.com/pypa/setuptools_scm#configuration-parameters

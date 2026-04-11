@@ -48,6 +48,20 @@ pixi shell
 That drops you into an env where `sweets`, `dolphin` and `compass` are all on
 the `PATH` and sweets is installed in editable mode.
 
+**GPU mode (Linux + CUDA 12+ only).** There's a `gpu` pixi environment that
+swaps the CPU `isce3` build for `isce3-cuda`, which accelerates COMPASS
+geocoding, cross-multiplication and resampling on the GPU. dolphin itself
+runs phase-linking on the GPU through JAX+CUDA regardless of environment.
+
+```bash
+pixi shell -e gpu        # activate once
+sweets run config.yaml   # now uses isce3-cuda
+```
+
+macOS can't install this environment (conda-forge doesn't ship osx-arm64
+builds of `isce3-cuda`); `pixi shell` without `-e gpu` is the right default
+for every non-CUDA machine.
+
 If you're stuck without pixi, there's a derived `environment.yml` suitable for
 conda/mamba, but you'll have to pin the fork versions yourself.
 

@@ -742,39 +742,229 @@ class NisarGslcSearch(YamlModel):
 
     @log_runtime
     def download(self) -> list[Path]:
-        """Search + download + bbox-subset NISAR GSLC HDF5s into `out_dir`."""
-        from opera_utils.nisar import run_download
+        """Search + download + bbox-subset NISAR GSLC HDF5s into `out_dir`.
+
+        Per-product peeking: each search result is opened remotely to
+        learn its actual ``(frequency, polarizations)`` signature. We
+        keep only the largest signature group so dolphin gets a stack
+        with a single shared subdataset path; mismatched cycles get
+        skipped with a warning. Row/col slices are computed per product
+        (not once for the whole stack) so cycles whose grid origins
+        don't perfectly line up still get a valid subset.
+        """
+        from opera_utils.nisar import search
+        from opera_utils.nisar._download import process_file
 
         self.out_dir.mkdir(parents=True, exist_ok=True)
         logger.info(self.summary())
 
-        # Peek at the first matching product to learn the actual frequency
-        # + polarizations the file carries. Different NISAR releases pack
-        # different bands and pols, and run_download crashes if you ask
-        # for the wrong frequency.
-        freq, pols = self._resolve_frequency_and_pols()
-        logger.info(f"NISAR resolved: frequency={freq}, polarizations={pols}")
-
-        bounds: tuple[float, float, float, float] = tuple(self.aoi.bounds)  # type: ignore[assignment]
-        result = run_download(
-            bbox=bounds,
+        results = search(
+            bbox=tuple(self.aoi.bounds),  # type: ignore[arg-type]
             relative_orbit_number=self.track,
             track_frame_number=self.frame,
             start_datetime=self.start,
             end_datetime=self.end,
-            frequency=freq,
-            polarizations=pols,
             short_name=self.short_name,
-            num_workers=self.num_workers,
-            output_dir=self.out_dir,
         )
-        files = sorted(Path(p) for p in result)
-        logger.info(f"Downloaded {len(files)} NISAR GSLC files to {self.out_dir}")
-        return files
+        if not results:
+            msg = (
+                "No NISAR GSLC products found for the requested AOI /"
+                " track / frame / dates."
+            )
+            raise RuntimeError(msg)
+
+        groups = _group_nisar_results_by_signature(results)
+        logger.info(
+            f"NISAR found {len(results)} hit(s) across "
+            f"{len(groups)} (frequency, polarization) signature(s):"
+        )
+        for sig, items in groups.items():
+            logger.info(f"  frequency{sig[0]}/{sorted(sig[1])}: {len(items)} cycle(s)")
+
+        ranked = self._rank_signatures(groups)
+        bounds: tuple[float, float, float, float] = tuple(self.aoi.bounds)  # type: ignore[assignment]
+
+        downloaded: list[Path] = []
+        attempted: list[str] = []
+        for sig in ranked:
+            chosen = groups[sig]
+            chosen_freq, chosen_pols = self._reconcile(sig[0], sorted(sig[1]))
+            logger.info(
+                f"NISAR trying frequency={chosen_freq},"
+                f" polarizations={chosen_pols} ({len(chosen)} cycle(s));"
+                f" {len(results) - len(chosen)} cycle(s) belong to other"
+                " signatures."
+            )
+            attempted.append(f"frequency{chosen_freq}/{chosen_pols}")
+
+            group_outputs = self._download_group(
+                chosen=chosen,
+                chosen_freq=chosen_freq,
+                chosen_pols=chosen_pols,
+                bounds=bounds,
+                process_file=process_file,
+            )
+            if group_outputs:
+                downloaded.extend(group_outputs)
+                break
+            logger.warning(
+                f"NISAR: signature frequency{chosen_freq}/{chosen_pols} produced"
+                " no usable GeoTIFFs (bbox likely outside the actual data"
+                " extent); falling back to next signature."
+            )
+
+        downloaded.sort()
+        if not downloaded:
+            msg = (
+                f"NISAR: no usable GeoTIFFs for AOI {bounds} after trying"
+                f" signatures {attempted}. Either the bbox doesn't actually"
+                " intersect any product's grid extent, or the pinned"
+                " frequency/polarizations don't match what's available."
+                " Try widening the date range or removing the `frequency` /"
+                " `polarizations` pins from the config to let sweets"
+                " auto-detect."
+            )
+            raise RuntimeError(msg)
+        logger.info(f"Wrote {len(downloaded)} NISAR GSLC GeoTIFFs to {self.out_dir}")
+        return downloaded
+
+    def _download_group(
+        self,
+        chosen: list,  # noqa: ANN001
+        chosen_freq: str,
+        chosen_pols: list[str],
+        bounds: tuple[float, float, float, float],
+        process_file,  # noqa: ANN001
+    ) -> list[Path]:
+        """Download + GeoTIFF-convert every product in one signature group."""
+        outputs: list[Path] = []
+        for product in chosen:
+            short = Path(product.filename).name
+            try:
+                rows, cols = _get_per_product_rowcol_slice(product, bounds, chosen_freq)
+            except Exception as e:
+                logger.warning(
+                    f"NISAR: failed to compute row/col slice for {short}:"
+                    f" {e}; skipping."
+                )
+                continue
+            try:
+                h5_path = Path(
+                    process_file(
+                        url=product.filename,
+                        rows=rows,
+                        cols=cols,
+                        output_dir=self.out_dir,
+                        frequency=chosen_freq,
+                        polarizations=chosen_pols,
+                    )
+                )
+            except Exception as e:
+                logger.warning(f"NISAR: download failed for {short}: {e}; skipping.")
+                continue
+            # NISAR HDF5s store coordinates as separate xCoordinates /
+            # yCoordinates 1D arrays, not as CF-compliant CRS metadata.
+            # GDAL's HDF5 driver opens the subdataset but reads an identity
+            # geotransform, which then breaks dolphin's nodata-mask /
+            # bounds-mask code paths. Convert the subset HDF5 into a
+            # CFloat32 GeoTIFF with explicit UTM georeferencing so dolphin
+            # can consume it as a normal raster.
+            try:
+                tif_paths = _nisar_h5_to_geotiffs(
+                    h5_path=h5_path,
+                    frequency=chosen_freq,
+                    polarizations=chosen_pols,
+                )
+            except Exception as e:
+                logger.warning(
+                    f"NISAR: GeoTIFF conversion failed for {h5_path.name}:"
+                    f" {e}; skipping."
+                )
+                continue
+            outputs.extend(tif_paths)
+        return outputs
+
+    def _rank_signatures(
+        self,
+        groups: dict[tuple[str, frozenset[str]], list],
+    ) -> list[tuple[str, frozenset[str]]]:
+        """Rank (frequency, polarization-set) groups from best to worst.
+
+        Sort key (descending):
+
+        1. Stack size — more cycles is always better for InSAR.
+        2. User polarization overlap — pols are what dolphin actually
+           consumes, so a VV pin matters more than a frequency pin.
+        3. User frequency match — soft preference; sweets will override
+           it if the pinned frequency has no data in the AOI.
+
+        The caller iterates this list and stops at the first signature
+        whose products actually yield usable GeoTIFFs.
+        """
+        user_pols = set(self.polarizations or [])
+        user_freq = self.frequency
+
+        def key(item: tuple[tuple[str, frozenset[str]], list]) -> tuple[int, int, int]:
+            sig, prods = item
+            n_cycles = len(prods)
+            pol_match = int(bool(user_pols and (user_pols & sig[1])))
+            freq_match = int(user_freq is not None and sig[0] == user_freq)
+            return (n_cycles, pol_match, freq_match)
+
+        return [sig for sig, _ in sorted(groups.items(), key=key, reverse=True)]
 
     def existing_files(self) -> list[Path]:
-        """Return any NISAR GSLC HDF5s already present in `out_dir`."""
-        return sorted(self.out_dir.glob("NISAR_L2_*GSLC*.h5"))
+        """Return on-disk NISAR GSLC GeoTIFFs (the converted, dolphin-ready form).
+
+        sweets stores both the raw subset HDF5s (from opera-utils
+        `process_file`) and a derived per-polarization CFloat32 GeoTIFF
+        next to each one. dolphin consumes the GeoTIFFs.
+        """
+        return sorted(self.out_dir.glob("NISAR_L2_*GSLC*.*.tif"))
+
+
+def _group_nisar_results_by_signature(
+    results,  # noqa: ANN001
+) -> dict[tuple[str, frozenset[str]], list]:
+    """Group NISAR search results by (frequency_letter, frozenset(pols)).
+
+    Each result is opened remotely to inspect its actual grid layout.
+    Products that fail to peek (e.g. transient network error) are skipped
+    with a warning.
+    """
+    groups: dict[tuple[str, frozenset[str]], list] = {}
+    for prod in results:
+        short = Path(prod.filename).name
+        try:
+            with prod._open() as hf:
+                freq, pols = _peek_nisar_grid_from_handle(hf)
+        except Exception as e:
+            logger.warning(f"NISAR: failed to peek {short}: {e}; skipping.")
+            continue
+        sig = (freq, frozenset(pols))
+        groups.setdefault(sig, []).append(prod)
+    return groups
+
+
+def _get_per_product_rowcol_slice(
+    product,  # noqa: ANN001
+    bbox: tuple[float, float, float, float],
+    frequency: str,
+) -> tuple[Optional[slice], Optional[slice]]:
+    """Compute row/col slices for `bbox` against this product's own grid.
+
+    opera-utils' default `_get_rowcol_slice` uses results[0]'s grid for
+    the whole stack, which gives wrong indices when cycles have slightly
+    different grid origins. Recomputing per-product is safer.
+    """
+    west, south, east, north = bbox
+    row_start, col_start = product.lonlat_to_rowcol(west, north, frequency)
+    row_stop, col_stop = product.lonlat_to_rowcol(east, south, frequency)
+    if row_start > row_stop:
+        row_start, row_stop = row_stop, row_start
+    if col_start > col_stop:
+        col_start, col_stop = col_stop, col_start
+    return slice(row_start, row_stop), slice(col_start, col_stop)
 
 
 def _peek_nisar_grid(h5path: Path) -> tuple[str, list[str]]:
@@ -783,6 +973,108 @@ def _peek_nisar_grid(h5path: Path) -> tuple[str, list[str]]:
 
     with h5py.File(h5path, "r") as hf:
         return _peek_nisar_grid_from_handle(hf)
+
+
+def _nisar_h5_to_geotiffs(
+    h5_path: Path,
+    frequency: str,
+    polarizations: list[str],
+) -> list[Path]:
+    """Convert one NISAR GSLC HDF5 subset into per-polarization CFloat32 GeoTIFFs.
+
+    NISAR HDF5s carry their grid as separate ``xCoordinates`` /
+    ``yCoordinates`` arrays under ``/science/LSAR/GSLC/grids/frequency<X>/``;
+    GDAL's HDF5 driver reads the subdataset but reports an identity
+    geotransform, which breaks every downstream tool that expects a
+    georeferenced raster (dolphin masking, sweets bounds intersection,
+    etc.). Re-emitting each polarization as a CFloat32 GeoTIFF with an
+    explicit UTM geotransform fixes everything in one shot.
+
+    The output filenames are ``<h5_stem>.<polarization>.tif`` next to
+    the source HDF5. Existing outputs are skipped.
+    """
+    import h5py
+    import numpy as np
+    from osgeo import gdal, osr
+
+    gdal.UseExceptions()
+
+    out_paths: list[Path] = []
+    grid_path = f"/science/LSAR/GSLC/grids/frequency{frequency}"
+    with h5py.File(h5_path, "r") as hf:
+        if grid_path not in hf:
+            msg = (
+                f"{h5_path.name}: no `{grid_path}` group — likely a"
+                " metadata-only stub from a non-intersecting bbox."
+            )
+            raise RuntimeError(msg)
+        grid = hf[grid_path]
+        x_coords = grid["xCoordinates"][:]
+        y_coords = grid["yCoordinates"][:]
+        epsg = int(grid["projection"][()])
+
+        n_cols = len(x_coords)
+        n_rows = len(y_coords)
+        if n_cols < 2 or n_rows < 2:
+            msg = f"{h5_path.name}: grid is degenerate ({n_rows}x{n_cols})"
+            raise RuntimeError(msg)
+
+        # NISAR coordinates are pixel centers; build a top-left geotransform.
+        dx = float(x_coords[1] - x_coords[0])
+        dy = float(y_coords[1] - y_coords[0])  # negative when y decreases (typical)
+        x_origin = float(x_coords[0]) - dx / 2
+        y_origin = float(y_coords[0]) - dy / 2
+        geotransform = (x_origin, dx, 0.0, y_origin, 0.0, dy)
+
+        srs = osr.SpatialReference()
+        srs.ImportFromEPSG(epsg)
+        projection = srs.ExportToWkt()
+
+        for pol in polarizations:
+            if pol not in grid:
+                logger.warning(
+                    f"{h5_path.name}: polarization {pol} not in HDF5; skipping."
+                )
+                continue
+            out_path = h5_path.with_suffix(f".{pol}.tif")
+            if out_path.exists():
+                logger.debug(f"{out_path.name} already exists; skipping convert.")
+                out_paths.append(out_path)
+                continue
+
+            data = np.asarray(grid[pol][:])
+            driver = gdal.GetDriverByName("GTiff")
+            dst = driver.Create(
+                str(out_path),
+                n_cols,
+                n_rows,
+                1,
+                gdal.GDT_CFloat32,
+                # PREDICTOR=3 is float-only; complex doesn't accept it.
+                options=[
+                    "COMPRESS=DEFLATE",
+                    "TILED=YES",
+                    "BLOCKXSIZE=512",
+                    "BLOCKYSIZE=512",
+                ],
+            )
+            dst.SetGeoTransform(geotransform)
+            dst.SetProjection(projection)
+            band = dst.GetRasterBand(1)
+            band.WriteArray(data)
+            # Embed the original sensing time as raster metadata so dolphin's
+            # date parser can pull it back out via opera_utils.get_dates.
+            ident = hf.get("/science/LSAR/identification")
+            if ident is not None and "zeroDopplerStartTime" in ident:
+                raw = ident["zeroDopplerStartTime"][()]
+                if isinstance(raw, (bytes, bytearray)):
+                    raw = raw.decode("utf-8")
+                dst.SetMetadataItem("sensing_start", str(raw))
+            band.FlushCache()
+            dst = None
+            out_paths.append(out_path)
+            logger.info(f"Wrote {out_path.name}")
+    return out_paths
 
 
 def _peek_nisar_grid_from_handle(hf) -> tuple[str, list[str]]:  # noqa: ANN001

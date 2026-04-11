@@ -155,15 +155,26 @@ branches + the sweets v0.2-rewrite branch):
 8. **Timeseries / velocity outputs were in radians, not meters.**
    dolphin's `model_post_init` only auto-detected OPERA-S1 and
    Capella; NISAR fell through with no warning and wrote units as
-   `radians / year`. Landed a dolphin-side h5py-based NISAR auto-
-   detect (reads `/science/LSAR/identification/radarBand`) plus a
-   correct `NISAR_L_FREQUENCY` constant (isce-framework/dolphin#704),
-   AND a sweets-side explicit wavelength forward via
-   `build_displacement_config(wavelength=...)` — dolphin's h5py
-   auto-detect can't see through sweets' VRT wrappers, so sweets peeks
-   the raw `.h5` itself and passes the answer through. Parallel fix
-   for sarlet's `SENSOR_WAVELENGTHS["NISAR"]` (was `C_LIGHT / 1.257e9`,
-   now the precise L-band frequency).
+   `radians / year`. First fix attempt landed an h5py-based NISAR
+   branch that reads `/science/LSAR/identification/radarBand` — but
+   that opens the HDF5 on every run and doesn't work at all through
+   sweets' VRT wrappers. Replaced with a two-line filename prefix
+   check (`NISAR_L*` vs `NISAR_S*` per NISAR D-102269 §3.4), which
+   is cheaper and works for raw HDF5, VRTs, GeoTIFF copies, or any
+   rename that keeps the granule prefix. dolphin fork carries the
+   filename fix + corrected `NISAR_L_FREQUENCY` constant (old value
+   gave a 1.4 mm wavelength error). Parallel sarlet fix for
+   `SENSOR_WAVELENGTHS["NISAR"]`. sweets' explicit wavelength
+   pass-through was then deleted since dolphin handles it
+   end-to-end; verified on the test-sweets-nisar Salinas run, which
+   produced `velocity.tif` with `Unit Type: meters / year` and a
+   std dev of ~26 mm — physically plausible.
+
+   TODO (not a blocker): L-band frequencyA and frequencyB centers
+   differ by ~1% (~2 mm wavelength), but current products don't
+   store the actual carrier and sweets always downloads a
+   single-frequency stack. Revisit when freqB-only test data is
+   available or mm-accurate displacement becomes a requirement.
 
 ## Smoke test results, round 2 (2026-04-10, OPERA CSLC + tropo path)
 

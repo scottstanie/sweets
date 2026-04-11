@@ -58,16 +58,17 @@
   raw HDF5 subdataset — dolphin opens the VRT natively and the HDF5
   stays the single source of truth for pixel values. Conversion step
   dropped from O(n_pixels) to O(1).
-- **Explicit NISAR wavelength forwarded to dolphin.** dolphin's own
-  `model_post_init` auto-detect opens the first CSLC with h5py to read
-  `/science/LSAR/identification/radarBand`, which doesn't work when
-  dolphin sees a sweets VRT instead of an HDF5.
-  `NisarGslcSearch.wavelength()` peeks the first downloaded `.h5` and
-  maps its radarBand to the matching `dolphin.constants` value; the
-  new `wavelength=` kwarg on `build_displacement_config` /
-  `run_displacement` forwards it. Without this fix, NISAR timeseries
-  / velocity outputs landed in radians instead of meters
-  (isce-framework/dolphin#704).
+- **NISAR wavelength auto-detect from filename.** dolphin's
+  `model_post_init` now recognizes the NISAR D-102269 §3.4 granule
+  prefix (`NISAR_L*` / `NISAR_S*`) and maps it to `NISAR_L_WAVELENGTH`
+  / `NISAR_S_WAVELENGTH`, instead of opening the first CSLC with h5py
+  to read `/science/LSAR/identification/radarBand`. Filename parsing
+  is cheaper, works through any rename (sweets' VRT wrappers,
+  GeoTIFF copies, subsetters), and doesn't lose information since
+  the BETA PR products don't store a center-frequency dataset anyway.
+  `NisarGslcSearch.wavelength()` uses the same prefix check. Without
+  this, NISAR timeseries / velocity outputs landed in radians
+  instead of meters (isce-framework/dolphin#704).
 - **NISAR signature ranking + fallback.** `NisarGslcSearch.download()`
   now ranks (frequency, polarization) groups by `(stack size, pol match,
   freq match)` so a `polarizations` pin always beats a `frequency` pin

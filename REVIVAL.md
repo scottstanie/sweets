@@ -51,49 +51,52 @@ loose, and where to look next.
 
 ## What's still loose (ordered by usefulness)
 
-1. **Update `docs/sweets-demo.ipynb`** — references the old CLI flags
-   (`--track`, etc.) and old output paths (`interferograms/stitched/`).
-   Should be rewritten against the new dolphin output layout
-   (`dolphin/timeseries/*.tif`, `dolphin/interferograms/*.tif`) and show
-   all three `--source` options (`safe`, `opera-cslc`, `nisar-gslc`).
-2. **Update `README.md`** — still describes the frame-based download flow.
-   Replace with the burst-subset usage, the OPERA CSLC alternative, the
-   NISAR option, the `--do-tropo` knob, and the pixi install path.
-3. **Add a `sweets export-mintpy` subcommand** that wraps dolphin's mintpy
+1. **Upstream the fork fixes.** Every correctness fix in this branch
+   that touched a dependency landed on `scottstanie/<repo>@develop-scott`:
+   `dolphin` (NISAR wavelength + filename parser + HDF5-vs-NETCDF driver
+   split + yaml_model Union handling), `opera-utils` (NETCDF/HDF5 driver
+   split in `format_nc_filename` + `create_nodata_mask`, plus the Float16
+   GTIFF_KWARGS fix), `COMPASS` (numpy 2 `np.string_`/`np.unicode_`),
+   `s1-reader` (polyfit numpy 2 regression), `sarlet` (NISAR
+   L-band constant). Separate PRs back to each upstream repo.
+2. **Add a `sweets export-mintpy` subcommand** that wraps dolphin's mintpy
    exporter (closes #128 + #42). Should be a thin function in
    `sweets._mintpy.py`.
-4. **Smoke-test the NISAR path end-to-end.** `NisarGslcSearch` is
-   unit-tested for config round-trip and exercises `run_download` at
-   the signature level, but there's no full
-   download-+-dolphin smoke test yet. A `pixi run smoke-nisar` against
-   a known-good NISAR beta product would be the obvious next step.
-5. **Tropo correction for NISAR.** NISAR GSLCs don't have a separate
+3. **Tropo correction for NISAR.** NISAR GSLCs don't have a separate
    CSLC-STATIC file, so there's no stitched `local_incidence_angle.tif`
    for `apply_tropo` to consume. `Workflow._run_tropo` currently warns
    and skips when the source is NISAR. Need either: (a) a sweets-side
    helper that extracts / computes incidence from the NISAR GSLC's
    orbit + DEM, (b) a separate NISAR-specific GeoTIFF we ship, or
    (c) user-supplied incidence raster path on the CLI.
-6. **Wire pixi to run the smoke tests in CI.** `pixi run smoke-opera`,
+4. **Wire pixi to run the smoke tests in CI.** `pixi run smoke-opera`,
    `pixi run smoke-safe`, `pixi run smoke-nisar` against pre-staged
    tiny stacks would catch the kind of "import works but pipeline
    doesn't" regression that bit several open issues.
-7. **Web UI** — left exactly as Scott had it under `src/sweets/web/`. Excluded
+5. **L-band frequencyA vs frequencyB carrier precision.** Current
+   products don't populate `/science/LSAR/GSLC/grids/frequency{A,B}/centerFrequency`
+   (per NISAR D-102269 §4 they should). `NisarGslcSearch.wavelength()`
+   already has a runtime reader that will pick this up the moment
+   spec-compliant products appear; for now it falls back to the
+   filename-based L/S constant, which is within ~1% of the split-mode
+   centers. Revisit when freqB-only test data shows up or mm-accurate
+   displacement becomes a requirement.
+6. **Web UI** — left exactly as Scott had it under `src/sweets/web/`. Excluded
    from mypy and from this revival's scope.
 
 ## Things I (Claude) deliberately did NOT do
 
-- **Touch upstream `isce-framework/dolphin`, `opera-adt/COMPASS`, or
-  `opera-adt/opera-utils`.** All fixes landed on personal forks
-  `scottstanie/<repo>@develop-scott`; merging them upstream is left to
-  whoever is talking to the dolphin release channel / OPERA.
+- **Open PRs against upstream `isce-framework/dolphin`,
+  `opera-adt/COMPASS`, or `opera-adt/opera-utils`.** All fixes landed on
+  personal forks `scottstanie/<repo>@develop-scott`; opening upstream
+  PRs is left to whoever is talking to the dolphin release channel /
+  OPERA.
 - **Touch the COMPASS / `_geocode_slcs.py` integration.** Geocoding still uses
   COMPASS; the hand-rolled config-file shuffling in `_geocode_slcs.py` is the
   same as on main. If we want to drop COMPASS in favor of an `isce3.geocode_slc`
   call directly, that's a separate (large) job.
 - **Build a NISAR incidence-angle raster for tropo.** `Workflow._run_tropo`
   warns and skips when the source is NISAR. See "What's still loose".
-- **Notebook updates** — out of scope for this swing.
 
 ## Smoke test results, round 3 (2026-04-10, NISAR GSLC path)
 

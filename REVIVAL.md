@@ -98,6 +98,51 @@ loose, and where to look next.
 - **Build a NISAR incidence-angle raster for tropo.** `Workflow._run_tropo`
   warns and skips when the source is NISAR. See "What's still loose".
 
+## Smoke test results, round 4 (2026-04-11, three-source cross-validation)
+
+End-to-end runs of all three source variants against the same LA AOI
+(`-118.3581 33.7005 -118.2128 33.8316`, Long Beach / San Pedro) and
+the same Dec 2025 window, codified as three self-contained example
+notebooks under `docs/`. Everything passes and the output `velocity.tif`
+comes out in `meters / year` on every path.
+
+| notebook | source | track/frame | wall time | note |
+|---|---|---|---|---|
+| `example_s1_burst.ipynb` | `safe` (S1 bursts + COMPASS) | T071 desc, IW2 | ~5 min | 5 cycles |
+| `example_opera_cslc.ipynb` | `opera-cslc` | T071 desc | ~5 min | 5 cycles |
+| `example_nisar.ipynb` | `nisar-gslc` | T034 asc frame 18 | ~1 min | 2 cycles |
+
+**Bugs caught and fixed during this round:**
+
+1. **dolphin `format_nc_filename` swapped HDF5 vs NETCDF driver
+   wrong.** My earlier fix had it pick `HDF5:` for every `.h5` file,
+   which broke CF-compliant HDF5s like OPERA CSLCs and COMPASS
+   static_layers: GDAL's bare HDF5 driver opens the data but returns
+   an identity geotransform. Switch to: NISAR raw HDF5s (granule
+   prefix `NISAR_`) get HDF5:, everything else gets NETCDF:.
+   Matching fix in `opera_utils._utils.format_nc_filename` and
+   `opera_utils._cslc.create_nodata_mask`.
+2. **dolphin `stitching.get_downsampled_vrts` wrapped GDAL subdataset
+   strings in `Path()`.** `Path("HDF5:\"f.h5\":\"//data/los_east\"")`
+   silently normalizes the inner `//` to `/`, turning a valid GDAL
+   subdataset reference into an invalid one. Broke COMPASS
+   static_layers stitching on the BurstSearch path. Fix: keep `fn`
+   as a string via `fspath(fn)` and don't go through `pathlib.Path`.
+3. **opera-utils' NISAR subset stripped `centerFrequency` and other
+   scalar metadata** from the frequency group. Add a catch-all loop
+   that copies every `ndim <= 1` Dataset in the source group. First
+   attempt copied 2D datasets too and hung on the ~5 GB per-product
+   `mask` raster — restricted to 1D + scalar after that.
+4. **NISAR wavelength: no static table matches real products.** The
+   initial fix parsed the filename MODE code and looked up Figure 3-1
+   values (e.g. 4005 -> freqA 1229 MHz). But the actual BETA PR
+   products report freqA = 1239 MHz for mode 4005, a 10 MHz / ~0.8%
+   disagreement. Keep the MODE table as a fallback (still strictly
+   better than the generic 1257.5 MHz constant) and document the
+   drift, but prefer reading `centerFrequency` from the HDF5 directly
+   whenever it's present. opera-utils now preserves it during subset
+   extraction (see #3 above).
+
 ## Smoke test results, round 3 (2026-04-10, NISAR GSLC path)
 
 End-to-end run with `--source nisar-gslc` against several AOIs around

@@ -58,17 +58,21 @@
   raw HDF5 subdataset — dolphin opens the VRT natively and the HDF5
   stays the single source of truth for pixel values. Conversion step
   dropped from O(n_pixels) to O(1).
-- **NISAR wavelength auto-detect from filename.** dolphin's
-  `model_post_init` now recognizes the NISAR D-102269 §3.4 granule
-  prefix (`NISAR_L*` / `NISAR_S*`) and maps it to `NISAR_L_WAVELENGTH`
-  / `NISAR_S_WAVELENGTH`, instead of opening the first CSLC with h5py
-  to read `/science/LSAR/identification/radarBand`. Filename parsing
-  is cheaper, works through any rename (sweets' VRT wrappers,
-  GeoTIFF copies, subsetters), and doesn't lose information since
-  the BETA PR products don't store a center-frequency dataset anyway.
-  `NisarGslcSearch.wavelength()` uses the same prefix check. Without
-  this, NISAR timeseries / velocity outputs landed in radians
-  instead of meters (isce-framework/dolphin#704).
+- **NISAR wavelength: read centerFrequency from HDF5 at runtime.**
+  Three-tier resolution in `NisarGslcSearch.wavelength()`:
+  (1) read `/science/LSAR/GSLC/grids/frequency{A,B}/centerFrequency`
+  from the HDF5 — authoritative, distinguishes freqA from freqB
+  automatically, and picks up the exact carrier reported by the
+  processor; (2) if missing, parse the NISAR D-102269 §3.4 filename
+  MODE code and look it up in `dolphin.constants.NISAR_L_MODE_CENTERS_HZ`
+  (Figure 3-1 values — approximate to ~0.8% but strictly better than
+  the generic constant for split modes); (3) fall back to the generic
+  `NISAR_L_WAVELENGTH` / `NISAR_S_WAVELENGTH` from the granule prefix
+  (`NISAR_L*` / `NISAR_S*`), matched to the full-band 77 MHz center.
+  Parallel filename-based auto-detect on the dolphin side for anyone
+  passing NISAR HDF5s directly. Fixes
+  isce-framework/dolphin#704; without it, NISAR timeseries / velocity
+  outputs landed in radians instead of meters.
 - **NISAR signature ranking + fallback.** `NisarGslcSearch.download()`
   now ranks (frequency, polarization) groups by `(stack size, pol match,
   freq match)` so a `polarizations` pin always beats a `frequency` pin

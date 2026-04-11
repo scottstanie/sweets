@@ -72,6 +72,14 @@ class ConfigCmd:
     output: Path = Path("sweets_config.yaml")
     """Where to write the config file."""
 
+    with_schema: bool = True
+    """Also write a sibling `<output>.schema.json` next to the YAML and
+    prepend a `# yaml-language-server: $schema=...` modeline. Editors
+    with the YAML Language Server (VS Code, Neovim-yamlls, JetBrains,
+    etc.) use that to provide inline hover docs, autocomplete, and
+    validation for every field in the sweets config. Pass
+    --no-with-schema to skip."""
+
     def run(self) -> None:
         """Build and dump a Workflow config to YAML."""
         # Heavy imports go here so `sweets --help` is snappy.
@@ -117,7 +125,45 @@ class ConfigCmd:
             }
         )
         workflow.to_yaml(self.output)
+        if self.with_schema:
+            _emit_schema_sidecar(self.output)
         print(f"wrote {self.output}", file=sys.stderr)
+
+
+def _emit_schema_sidecar(yaml_path: Path) -> None:
+    """Write a JSON schema next to the YAML and add a modeline comment.
+
+    The schema is `Workflow.model_json_schema()` emitted verbatim; pydantic
+    produces JSON Schema Draft 2020-12 with a `oneOf + discriminator` for
+    the `Workflow.search` field, which the YAML Language Server handles
+    natively. The modeline is read by the redhat.vscode-yaml extension
+    (and every editor that speaks yamlls) to attach the schema at load
+    time.
+    """
+    import json
+
+    from sweets.core import Workflow
+
+    schema_path = yaml_path.with_suffix(yaml_path.suffix + ".schema.json")
+    schema_path.write_text(json.dumps(Workflow.model_json_schema(), indent=2) + "\n")
+
+    existing = yaml_path.read_text()
+    modeline = f"# yaml-language-server: $schema={schema_path.name}\n"
+    if modeline.strip() not in existing:
+        yaml_path.write_text(modeline + existing)
+    print(f"wrote {schema_path}", file=sys.stderr)
+
+
+@dataclass
+class SchemaCmd:
+    """Dump the JSON schema for the sweets workflow config to stdout."""
+
+    def run(self) -> None:
+        import json
+
+        from sweets.core import Workflow
+
+        print(json.dumps(Workflow.model_json_schema(), indent=2))
 
 
 @dataclass
@@ -180,6 +226,7 @@ def main() -> None:
         {
             "config": ConfigCmd,
             "run": RunCmd,
+            "schema": SchemaCmd,
             "server": ServerCmd,
         },
         prog="sweets",

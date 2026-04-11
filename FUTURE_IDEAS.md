@@ -109,49 +109,9 @@ Ship bowser as an **optional install** (`sweets[viewer]` extra) because
 its `titiler` dep has been flaky in the past. Sweets-core stays
 slim; users who want the viewer add one extra pip install.
 
-### R3. QA metrics via sarlet
-`sarlet.qa.interferogram.NetworkQA` already produces a multi-page PDF
-report for a network manifest: total fringe count per ifg (detects phase
-ramps from orbit errors), coherence statistics, network summary. That's
-exactly what we'd want to include in R1's HTML report. Options:
-
-- **Lift `NetworkQA` into the HTML report.** Embed the per-ifg metrics
-  table + fringe-count histogram.
-- **Ship sarlet as an optional dep** alongside bowser, reuse its QA
-  directly. Sarlet has a fair amount of surface area though, so we'd
-  want to pull out `sarlet.qa.interferogram` as its own package or
-  vendor just that module.
-
-The coregistration QA (`sarlet.qa.coregistration`) isn't needed — dolphin
-and OPERA CSLCs are already coregistered.
-
 ---
 
 ## Install / packaging / ergonomics
-
-### P1. `gpu` pixi feature pulling `isce3-cuda`
-sarlet already has this pattern. The minimal diff in `pyproject.toml`:
-
-```toml
-[tool.pixi.feature.gpu.target.linux-64.dependencies]
-isce3-cuda = ">=0.25.3"
-
-[tool.pixi.feature.gpu.system-requirements]
-cuda = "12"
-
-[tool.pixi.environments]
-default = { features = [...], solve-group = "default" }
-gpu = { features = [..., "gpu"], solve-group = "default" }
-```
-
-Users on CUDA 12+ Linux boxes get GPU-accelerated geocoding +
-cross-multiplication for free via `pixi shell -e gpu`. macOS falls back to
-CPU automatically because `target.linux-64` scopes the GPU dep. dolphin
-itself still runs phase-linking on the GPU through JAX+CUDA regardless.
-
-Low-risk change; the only downside is a slightly longer solve time for
-the default environment (because pixi materializes both envs' solve
-groups even if you only activate one).
 
 ### P2. JSON Schema for `sweets_config.yaml`
 **Tried in this branch** — see #P2-result below.

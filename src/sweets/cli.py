@@ -167,6 +167,32 @@ class SchemaCmd:
 
 
 @dataclass
+class ReportCmd:
+    """Render a single-file HTML report for a finished sweets run."""
+
+    work_dir: Annotated[Path, tyro.conf.Positional]
+    """Path to the sweets work directory (the one that contains `dolphin/`)."""
+
+    output: Optional[Path] = None
+    """Where to write the report. Defaults to `<work_dir>/sweets_report.html`."""
+
+    config_file: Optional[Path] = None
+    """Override path to the `sweets_config.yaml` used for the run.
+    Defaults to the first `*.yaml` found in `work_dir` (excluding
+    `dolphin_config.yaml`)."""
+
+    def run(self) -> None:
+        from sweets._report import build_report
+
+        path = build_report(
+            work_dir=self.work_dir,
+            output=self.output,
+            config_path=self.config_file,
+        )
+        print(f"wrote {path}", file=sys.stderr)
+
+
+@dataclass
 class RunCmd:
     """Execute a sweets workflow from a config file."""
 
@@ -227,6 +253,7 @@ def main() -> None:
             "config": ConfigCmd,
             "run": RunCmd,
             "schema": SchemaCmd,
+            "report": ReportCmd,
             "server": ServerCmd,
         },
         prog="sweets",

@@ -77,7 +77,6 @@ output quality)
   Float16 GTIFF_KWARGS fix; CMR tropo + NISAR download APIs.
 - **COMPASS**: numpy 2 `np.string_` / `np.unicode_` shims.
 - **s1-reader**: numpy 2 polyfit scalar regression.
-- **sarlet**: corrected `SENSOR_WAVELENGTHS["NISAR"]` to match UAVSAR.
 
 **Docs + smoke testing**
 - `docs/` ships four runnable notebooks: one per source plus a
@@ -153,8 +152,7 @@ output quality)
    split + yaml_model Union handling), `opera-utils` (NETCDF/HDF5 driver
    split in `format_nc_filename` + `create_nodata_mask`, plus the Float16
    GTIFF_KWARGS fix), `COMPASS` (numpy 2 `np.string_`/`np.unicode_`),
-   `s1-reader` (polyfit numpy 2 regression), `sarlet` (NISAR
-   L-band constant). Separate PRs back to each upstream repo.
+   `s1-reader` (polyfit numpy 2 regression). Separate PRs back to each upstream repo.
 2. **Add a `sweets export-mintpy` subcommand** that wraps dolphin's mintpy
    exporter (closes #128 + #42). Should be a thin function in
    `sweets._mintpy.py`.
@@ -307,8 +305,7 @@ branches + the sweets v0.2-rewrite branch):
    is cheaper and works for raw HDF5, VRTs, GeoTIFF copies, or any
    rename that keeps the granule prefix. dolphin fork carries the
    filename fix + corrected `NISAR_L_FREQUENCY` constant (old value
-   gave a 1.4 mm wavelength error). Parallel sarlet fix for
-   `SENSOR_WAVELENGTHS["NISAR"]`. sweets' explicit wavelength
+   gave a 1.4 mm wavelength error). sweets' explicit wavelength
    pass-through was then deleted since dolphin handles it
    end-to-end; verified on the test-sweets-nisar Salinas run, which
    produced `velocity.tif` with `Unit Type: meters / year` and a

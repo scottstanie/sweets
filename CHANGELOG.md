@@ -1,4 +1,4 @@
-# Unreleased — v0.2 rewrite
+# [0.3.0](https://github.com/opera-adt/sweets/compare/v0.2.0...v0.3.0) - 2026-04-12
 
 **Major changes**
 - **Burst-level downloads.** Sentinel-1 data is now fetched as just the bursts
@@ -127,11 +127,10 @@
   so the NISAR raw-HDF5 subdataset path works end-to-end.
 - NISAR wavelength auto-detect + corrected `NISAR_L_FREQUENCY` constant
   landed on `scottstanie/dolphin@develop-scott`
-  (isce-framework/dolphin#704); parallel NISAR wavelength fix landed on
-  `scottstanie/sarlet`.
+  (isce-framework/dolphin#704) NISAR wavelength fix
 
 
-# [0.2.0](https://github.com/opera-adt/dolphin/compare/v0.2.0...v0.3.0) - 2023-08-23
+# [0.2.0](https://github.com/isce-framework/sweets/compare/v0.2.0...v0.3.0) - 2023-08-23
 
 **Fixed**
 - Geometry/`static layers` file creation from new COMPASS changes

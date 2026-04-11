@@ -136,6 +136,7 @@ def build_displacement_config(
     mask_file: Optional[Path] = None,
     bounds: Optional[tuple[float, float, float, float]] = None,
     subdataset: str = "/data/VV",
+    wavelength: Optional[float] = None,
 ):
     """Build a :class:`DisplacementWorkflow` config from sweets options.
 
@@ -190,6 +191,10 @@ def build_displacement_config(
         output_options["bounds"] = list(bounds)
         output_options["bounds_epsg"] = 4326
 
+    input_options: dict = {"subdataset": subdataset}
+    if wavelength is not None:
+        input_options["wavelength"] = wavelength
+
     # Use model_validate so the nested dolphin sub-models accept dicts
     # rather than requiring us to import each one explicitly here.
     cfg = DisplacementWorkflow.model_validate(
@@ -197,7 +202,7 @@ def build_displacement_config(
             "cslc_file_list": [Path(p).resolve() for p in cslc_files],
             "work_directory": work_directory,
             "mask_file": mask_file,
-            "input_options": {"subdataset": subdataset},
+            "input_options": input_options,
             "worker_settings": {
                 "gpu_enabled": options.gpu_enabled,
                 "threads_per_worker": options.threads_per_worker,
@@ -237,6 +242,7 @@ def run_displacement(
     bounds: Optional[tuple[float, float, float, float]] = None,
     config_yaml: Optional[Path] = None,
     subdataset: str = "/data/VV",
+    wavelength: Optional[float] = None,
 ) -> "OutputPaths":
     """Build the dolphin config and run the displacement workflow.
 
@@ -274,6 +280,7 @@ def run_displacement(
         mask_file=mask_file,
         bounds=bounds,
         subdataset=subdataset,
+        wavelength=wavelength,
     )
     if config_yaml is not None:
         cfg.to_yaml(config_yaml)

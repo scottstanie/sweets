@@ -370,25 +370,19 @@ class Workflow(YamlModel):
             ]
         if isinstance(self.search, NisarGslcSearch):
             # NisarGslcSearch.existing_files() returns the per-polarization
-            # CFloat32 GeoTIFFs that sweets writes alongside each downloaded
-            # subset HDF5. Validate that each one has a real (non-identity)
-            # geotransform — that's the marker that conversion succeeded.
+            # VRT wrappers that sweets writes alongside each downloaded
+            # subset HDF5. The VRTs are tiny (~1 KB) so the MIN_VALID
+            # byte-count guard from the COMPASS path doesn't apply; instead,
+            # open each one through rasterio to confirm GDAL can see a real
+            # geotransform and CRS through the VRT -> HDF5 subdataset.
             import rasterio
 
             valid: list[Path] = []
             for p in self.search.existing_files():
-                if p.stat().st_size < self._MIN_VALID_GSLC_BYTES:
-                    logger.warning(
-                        f"Dropping {p.name}: only {p.stat().st_size} bytes;"
-                        f" likely a degenerate conversion."
-                    )
-                    continue
                 try:
                     with rasterio.open(p) as src:
-                        if src.transform.a == 1.0 and src.transform.e == 1.0:
-                            raise RuntimeError("identity geotransform")
-                        if src.crs is None:
-                            raise RuntimeError("no CRS")
+                        assert not (src.transform.a == 1.0 and src.transform.e == 1.0)
+                        assert src.crs is not None
                 except Exception as e:
                     logger.warning(f"Dropping {p.name}: not a valid raster ({e}).")
                     continue
@@ -520,15 +514,27 @@ class Workflow(YamlModel):
 
         - COMPASS / OPERA CSLCs are HDF5 files; dolphin reads them via
           ``input_options.subdataset = /data/VV``.
-        - NISAR GSLCs are pre-converted by sweets into per-polarization
-          CFloat32 GeoTIFFs (because GDAL's HDF5 driver can't get a real
-          geotransform from a NISAR HDF5 subdataset). dolphin opens
-          GeoTIFFs natively and ignores ``subdataset`` for raster inputs,
-          so the value is just a placeholder.
+        - NISAR GSLCs are wrapped by sweets in per-polarization VRTs
+          that inject georeferencing on top of the raw HDF5 subdataset;
+          dolphin opens the VRTs as plain rasters and ignores
+          ``subdataset``, so any placeholder string works.
         """
         if isinstance(self.search, NisarGslcSearch):
             return "/unused-for-raster-inputs"
         return "/data/VV"
+
+    def _dolphin_wavelength(self) -> Optional[float]:
+        """Radar wavelength override for the current source, or None.
+
+        dolphin auto-detects S1 from `get_burst_id` and NISAR from HDF5
+        metadata, but the NISAR auto-detect can't see through sweets'
+        VRT wrappers (h5py rejects the XML). Peek the NISAR source's
+        first HDF5 and return the matching constant; other sources let
+        dolphin's auto-detect handle it.
+        """
+        if isinstance(self.search, NisarGslcSearch):
+            return self.search.wavelength()
+        return None
 
     @log_runtime
     def _run_dolphin(self, gslc_files: list[Path]) -> "OutputPaths":
@@ -541,6 +547,7 @@ class Workflow(YamlModel):
             bounds=self.bbox,
             config_yaml=self.work_dir / "dolphin_config.yaml",
             subdataset=self._dolphin_subdataset(),
+            wavelength=self._dolphin_wavelength(),
         )
 
     # ------------------------------------------------------------------

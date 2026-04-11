@@ -863,25 +863,24 @@ class NisarGslcSearch(YamlModel):
                 logger.warning(f"NISAR: download failed for {short}: {e}; skipping.")
                 continue
             # NISAR HDF5s store coordinates as separate xCoordinates /
-            # yCoordinates 1D arrays, not as CF-compliant CRS metadata.
-            # GDAL's HDF5 driver opens the subdataset but reads an identity
-            # geotransform, which then breaks dolphin's nodata-mask /
-            # bounds-mask code paths. Convert the subset HDF5 into a
-            # CFloat32 GeoTIFF with explicit UTM georeferencing so dolphin
-            # can consume it as a normal raster.
+            # yCoordinates 1D arrays, not as CF-compliant CRS metadata, so
+            # GDAL's HDF5 driver reads an identity geotransform for the
+            # subdataset. Wrap each polarization in a tiny VRT that injects
+            # the real geotransform + SRS on top of the HDF5 subdataset —
+            # dolphin opens the VRT natively and the HDF5 stays the single
+            # source of truth for the pixel values.
             try:
-                tif_paths = _nisar_h5_to_geotiffs(
+                vrt_paths = _nisar_h5_to_vrts(
                     h5_path=h5_path,
                     frequency=chosen_freq,
                     polarizations=chosen_pols,
                 )
             except Exception as e:
                 logger.warning(
-                    f"NISAR: GeoTIFF conversion failed for {h5_path.name}:"
-                    f" {e}; skipping."
+                    f"NISAR: VRT wrap failed for {h5_path.name}:" f" {e}; skipping."
                 )
                 continue
-            outputs.extend(tif_paths)
+            outputs.extend(vrt_paths)
         return outputs
 
     def _rank_signatures(
@@ -914,13 +913,41 @@ class NisarGslcSearch(YamlModel):
         return [sig for sig, _ in sorted(groups.items(), key=key, reverse=True)]
 
     def existing_files(self) -> list[Path]:
-        """Return on-disk NISAR GSLC GeoTIFFs (the converted, dolphin-ready form).
+        """Return on-disk NISAR GSLC VRTs (the dolphin-ready wrappers).
 
-        sweets stores both the raw subset HDF5s (from opera-utils
-        `process_file`) and a derived per-polarization CFloat32 GeoTIFF
-        next to each one. dolphin consumes the GeoTIFFs.
+        sweets stores the raw subset HDF5s (written by opera-utils'
+        `process_file`) alongside a tiny per-polarization VRT wrapper
+        that injects the real geotransform + SRS on top of the HDF5
+        subdataset. dolphin consumes the VRTs.
         """
-        return sorted(self.out_dir.glob("NISAR_L2_*GSLC*.*.tif"))
+        return sorted(self.out_dir.glob("NISAR_L2_*GSLC*.*.vrt"))
+
+    def wavelength(self) -> float:
+        """Radar wavelength (m) inferred from the first downloaded HDF5.
+
+        sweets wraps each NISAR HDF5 in a ~1 KB VRT and passes the VRT to
+        dolphin, so dolphin's own h5py-based wavelength auto-detect
+        (which opens the CSLC directly) can't see the radar band. Peek
+        the first on-disk `.h5` here and map its `radarBand` to the
+        matching dolphin constant; the caller forwards the result to
+        `build_displacement_config(wavelength=...)` so timeseries outputs
+        land in meters instead of radians.
+        """
+        import h5py
+        from dolphin import constants
+
+        h5_files = sorted(self.out_dir.glob("NISAR_L2_*GSLC*.h5"))
+        assert h5_files, f"No NISAR .h5 files in {self.out_dir}; run download() first"
+        with h5py.File(h5_files[0], "r") as hf:
+            raw = hf["/science/LSAR/identification/radarBand"][()]
+        band = raw.decode() if isinstance(raw, (bytes, bytearray)) else str(raw)
+        band = band.upper()
+        if band == "L":
+            return constants.NISAR_L_WAVELENGTH
+        if band == "S":
+            return constants.NISAR_S_WAVELENGTH
+        msg = f"Unknown NISAR radarBand {band!r} in {h5_files[0].name}"
+        raise RuntimeError(msg)
 
 
 def _group_nisar_results_by_signature(
@@ -975,29 +1002,31 @@ def _peek_nisar_grid(h5path: Path) -> tuple[str, list[str]]:
         return _peek_nisar_grid_from_handle(hf)
 
 
-def _nisar_h5_to_geotiffs(
+def _nisar_h5_to_vrts(
     h5_path: Path,
     frequency: str,
     polarizations: list[str],
 ) -> list[Path]:
-    """Convert one NISAR GSLC HDF5 subset into per-polarization CFloat32 GeoTIFFs.
+    """Wrap each NISAR GSLC HDF5 polarization in a tiny georeferenced VRT.
 
-    NISAR HDF5s carry their grid as separate ``xCoordinates`` /
-    ``yCoordinates`` arrays under ``/science/LSAR/GSLC/grids/frequency<X>/``;
-    GDAL's HDF5 driver reads the subdataset but reports an identity
-    geotransform, which breaks every downstream tool that expects a
-    georeferenced raster (dolphin masking, sweets bounds intersection,
-    etc.). Re-emitting each polarization as a CFloat32 GeoTIFF with an
-    explicit UTM geotransform fixes everything in one shot.
+    NISAR HDF5s store their grid as separate ``xCoordinates`` /
+    ``yCoordinates`` arrays under ``/science/LSAR/GSLC/grids/frequency<X>/``
+    instead of CF-compliant CRS metadata, so GDAL's HDF5 driver opens the
+    subdataset but reports an identity geotransform. Every downstream tool
+    that expects a georeferenced raster (dolphin masking, sweets bounds
+    intersection, rasterio) then trips over it.
 
-    The output filenames are ``<h5_stem>.<polarization>.tif`` next to
-    the source HDF5. Existing outputs are skipped.
+    Writing a ~1-KB VRT that references the HDF5 subdataset and injects
+    the correct ``<SRS>`` + ``<GeoTransform>`` fixes the problem without
+    rewriting the ~20 MB of complex data. dolphin opens the VRT natively,
+    sees the right grid, and the source HDF5 stays the single source of
+    truth for the pixel values.
+
+    Output filenames: ``<h5_stem>.<polarization>.vrt`` next to the source
+    HDF5. Existing VRTs are left in place.
     """
     import h5py
-    import numpy as np
-    from osgeo import gdal, osr
-
-    gdal.UseExceptions()
+    from osgeo import osr
 
     out_paths: list[Path] = []
     grid_path = f"/science/LSAR/GSLC/grids/frequency{frequency}"
@@ -1015,20 +1044,20 @@ def _nisar_h5_to_geotiffs(
 
         n_cols = len(x_coords)
         n_rows = len(y_coords)
-        if n_cols < 2 or n_rows < 2:
-            msg = f"{h5_path.name}: grid is degenerate ({n_rows}x{n_cols})"
-            raise RuntimeError(msg)
+        assert (
+            n_cols >= 2 and n_rows >= 2
+        ), f"{h5_path.name}: grid is degenerate ({n_rows}x{n_cols})"
 
-        # NISAR coordinates are pixel centers; build a top-left geotransform.
+        # NISAR coordinates are pixel centers; the VRT geotransform is
+        # the top-left corner, so step back by half a pixel.
         dx = float(x_coords[1] - x_coords[0])
         dy = float(y_coords[1] - y_coords[0])  # negative when y decreases (typical)
         x_origin = float(x_coords[0]) - dx / 2
         y_origin = float(y_coords[0]) - dy / 2
-        geotransform = (x_origin, dx, 0.0, y_origin, 0.0, dy)
 
         srs = osr.SpatialReference()
         srs.ImportFromEPSG(epsg)
-        projection = srs.ExportToWkt()
+        wkt = srs.ExportToWkt()
 
         for pol in polarizations:
             if pol not in grid:
@@ -1036,42 +1065,29 @@ def _nisar_h5_to_geotiffs(
                     f"{h5_path.name}: polarization {pol} not in HDF5; skipping."
                 )
                 continue
-            out_path = h5_path.with_suffix(f".{pol}.tif")
+            out_path = h5_path.with_suffix(f".{pol}.vrt")
             if out_path.exists():
-                logger.debug(f"{out_path.name} already exists; skipping convert.")
+                logger.debug(f"{out_path.name} already exists; skipping.")
                 out_paths.append(out_path)
                 continue
-
-            data = np.asarray(grid[pol][:])
-            driver = gdal.GetDriverByName("GTiff")
-            dst = driver.Create(
-                str(out_path),
-                n_cols,
-                n_rows,
-                1,
-                gdal.GDT_CFloat32,
-                # PREDICTOR=3 is float-only; complex doesn't accept it.
-                options=[
-                    "COMPRESS=DEFLATE",
-                    "TILED=YES",
-                    "BLOCKXSIZE=512",
-                    "BLOCKYSIZE=512",
-                ],
+            vrt_xml = (
+                f'<VRTDataset rasterXSize="{n_cols}" rasterYSize="{n_rows}">\n'
+                f"  <SRS>{wkt}</SRS>\n"
+                f"  <GeoTransform>{x_origin}, {dx}, 0.0,"
+                f" {y_origin}, 0.0, {dy}</GeoTransform>\n"
+                f'  <VRTRasterBand dataType="CFloat32" band="1">\n'
+                "    <SimpleSource>\n"
+                '      <SourceFilename relativeToVRT="0">'
+                f'HDF5:"{h5_path}"://science/LSAR/GSLC/grids/'
+                f"frequency{frequency}/{pol}</SourceFilename>\n"
+                "      <SourceBand>1</SourceBand>\n"
+                f'      <SrcRect xOff="0" yOff="0" xSize="{n_cols}" ySize="{n_rows}"/>\n'
+                f'      <DstRect xOff="0" yOff="0" xSize="{n_cols}" ySize="{n_rows}"/>\n'
+                "    </SimpleSource>\n"
+                "  </VRTRasterBand>\n"
+                "</VRTDataset>\n"
             )
-            dst.SetGeoTransform(geotransform)
-            dst.SetProjection(projection)
-            band = dst.GetRasterBand(1)
-            band.WriteArray(data)
-            # Embed the original sensing time as raster metadata so dolphin's
-            # date parser can pull it back out via opera_utils.get_dates.
-            ident = hf.get("/science/LSAR/identification")
-            if ident is not None and "zeroDopplerStartTime" in ident:
-                raw = ident["zeroDopplerStartTime"][()]
-                if isinstance(raw, (bytes, bytearray)):
-                    raw = raw.decode("utf-8")
-                dst.SetMetadataItem("sensing_start", str(raw))
-            band.FlushCache()
-            dst = None
+            out_path.write_text(vrt_xml)
             out_paths.append(out_path)
             logger.info(f"Wrote {out_path.name}")
     return out_paths

@@ -925,22 +925,27 @@ class NisarGslcSearch(YamlModel):
     def wavelength(self) -> float:
         """Radar wavelength (m) for the downloaded stack.
 
-        Two-tier strategy:
+        Three-tier strategy, from most authoritative to most generic:
 
-        1. **Runtime read from the HDF5.** NISAR D-102269 §4 specifies
-           a Float64 scalar ``centerFrequency`` under each
+        1. **Runtime read from the HDF5.** NISAR D-102269 §4 specifies a
+           Float64 scalar ``centerFrequency`` under each
            ``/science/LSAR/GSLC/grids/frequency{A,B}`` group, carrying
-           the actual carrier of the processed image in Hz. When
-           present, return ``C / centerFrequency`` — this is precise,
-           distinguishes frequencyA from frequencyB automatically, and
-           needs no lookup table to track future band-split modes.
-        2. **Filename fallback.** Current BETA PR products don't
-           populate ``centerFrequency`` yet, so fall back to a coarse
-           constant picked from the NISAR D-102269 §3.4 granule prefix
-           (``NISAR_L*`` -> ``NISAR_L_WAVELENGTH``, ``NISAR_S*`` ->
-           ``NISAR_S_WAVELENGTH``). That matches the full-band
-           frequencyA center and is within ~1% of the split-mode
-           centers — fine for any non-mm-level InSAR workflow.
+           the exact carrier of the processed image in Hz. When present
+           we return ``C / centerFrequency`` directly.
+        2. **Filename MODE lookup.** Current BETA PR products don't
+           populate ``centerFrequency``, but they do embed the
+           acquisition MODE code in slot 8 of the NISAR D-102269 §3.4
+           granule filename (e.g. ``4005`` = 40+5 MHz split). Combined
+           with the chosen frequency letter (detected from which
+           ``frequency{A,B}`` subgroup exists in the downloaded subset),
+           ``NISAR_L_MODE_CENTERS_HZ`` from ``dolphin.constants`` gives
+           us the exact center frequency for that mode, per Figure 3-1.
+        3. **Coarse band fallback.** If neither of the above resolves
+           (unrecognized MODE, or the granule doesn't start with
+           ``NISAR_L`` / ``NISAR_S``), fall back to the generic band
+           constants. ``NISAR_L_WAVELENGTH`` matches the full-band
+           77 MHz mode exactly, which is not in the MODE table on
+           purpose — the fallback is correct for it.
 
         The caller forwards the result to
         ``build_displacement_config(wavelength=...)`` so dolphin writes
@@ -955,6 +960,7 @@ class NisarGslcSearch(YamlModel):
         candidates = h5_files if h5_files else self.existing_files()
         assert candidates, f"No NISAR files in {self.out_dir}; run download() first"
 
+        chosen_letter: Optional[str] = None
         if h5_files:
             with h5py.File(h5_files[0], "r") as hf:
                 for freq_letter in ("A", "B"):
@@ -963,15 +969,37 @@ class NisarGslcSearch(YamlModel):
                         "/centerFrequency"
                     )
                     if cf_path in hf:
-                        center_hz = float(hf[cf_path][()])
-                        return SPEED_OF_LIGHT / center_hz
+                        return SPEED_OF_LIGHT / float(hf[cf_path][()])
+                # No centerFrequency → remember which frequency letter is
+                # actually in the subset so the MODE-table lookup below
+                # can pick the right column.
+                for freq_letter in ("A", "B"):
+                    if f"/science/LSAR/GSLC/grids/frequency{freq_letter}" in hf:
+                        chosen_letter = freq_letter
+                        break
 
-        stem = candidates[0].name.upper()
+        name = candidates[0].name
+        parts = name.split("_")
+        # NISAR_IL_PT_PROD_CYL_REL_P_FRM_MODE_POLE_... -> MODE is slot 8.
+        if len(parts) >= 9 and chosen_letter is not None and parts[1].startswith("L"):
+            mode = parts[8]
+            centers = constants.NISAR_L_MODE_CENTERS_HZ.get(mode)
+            if centers is not None:
+                center_hz = centers[0 if chosen_letter == "A" else 1]
+                if center_hz is not None:
+                    return SPEED_OF_LIGHT / center_hz
+                logger.warning(
+                    f"NISAR MODE {mode!r} has no frequency{chosen_letter}"
+                    " entry in Figure 3-1; falling back to the generic"
+                    " L-band wavelength."
+                )
+
+        stem = name.upper()
         if stem.startswith("NISAR_L"):
             return constants.NISAR_L_WAVELENGTH
         if stem.startswith("NISAR_S"):
             return constants.NISAR_S_WAVELENGTH
-        msg = f"Cannot infer NISAR band from filename {candidates[0].name}"
+        msg = f"Cannot infer NISAR band from filename {name}"
         raise RuntimeError(msg)
 
 

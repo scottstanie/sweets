@@ -45,7 +45,10 @@
 
 **Removed**
 - `sweets.interferogram` (replaced by dolphin's interferogram network).
-- `sweets._missing_data`, `sweets.plotting`, `sweets._unzip` (no longer needed).
+- `sweets._missing_data`, `sweets._unzip` (no longer needed — the
+  missing-data filter now lives in `Workflow._apply_missing_data_filter`
+  on top of `opera_utils.missing_data`, and `burst2safe` materializes
+  `.SAFE` directories directly so there is nothing to unzip).
 - `scripts/prep_mintpy.py` (broken with the new layout; mintpy export is
   TODO via dolphin's existing exporters).
 
@@ -66,6 +69,15 @@
   failure mode was an opaque dolphin crash deep inside
   `interferogram.Network._make_ifg_pairs` when a bbox nicked the
   edge of a second burst.
+- **`oil_slick` phase colormap.** `sweets.plotting.plot_ifg` now defaults
+  to a cyclic `"oil_slick"` colormap inspired by thin-film interference
+  colors (dark -> violet -> blue -> cyan -> green -> yellow -> orange ->
+  red -> dark), replacing the previous `colorcet.CET_C8` default. The
+  colormap is registered with matplotlib on import so it is also
+  available by name as `cmap="oil_slick"` in any `imshow` / `pcolormesh`
+  call. `sweets.plotting` itself is preserved (the earlier CHANGELOG
+  draft claimed it was removed — that was incorrect; `plot_ifg`,
+  `browse_ifgs`, `browse_arrays` and `plot_area_of_interest` all remain).
 - **Example notebooks, one per source plus a cross-source comparison**,
   under `docs/`. All four share the same LA AOI + Dec 2025 window
   so runs can be compared directly:

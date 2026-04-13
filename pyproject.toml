@@ -185,7 +185,8 @@ mypy = "*"
 [tool.pixi.feature.plotting.dependencies]
 cartopy = "*"
 matplotlib = "*"
-colorcet = "*"
+geopandas = "*"
+ipywidgets = "*"
 
 # CPU (default) isce3 build - works on every platform sweets supports.
 [tool.pixi.feature.cpu.dependencies]

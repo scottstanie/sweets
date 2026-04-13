@@ -170,24 +170,20 @@ class SchemaCmd:
 class ReportCmd:
     """Render a single-file HTML report for a finished sweets run."""
 
-    work_dir: Annotated[Path, tyro.conf.Positional]
-    """Path to the sweets work directory (the one that contains `dolphin/`)."""
+    config_file: Annotated[Path, tyro.conf.Positional]
+    """Path to the sweets_config.yaml used for the run. A work directory
+    containing a sweets_config.yaml is also accepted and resolved to the
+    yaml inside it."""
 
     output: Optional[Path] = None
     """Where to write the report. Defaults to `<work_dir>/sweets_report.html`."""
-
-    config_file: Optional[Path] = None
-    """Override path to the `sweets_config.yaml` used for the run.
-    Defaults to the first `*.yaml` found in `work_dir` (excluding
-    `dolphin_config.yaml`)."""
 
     def run(self) -> None:
         from sweets._report import build_report
 
         path = build_report(
-            work_dir=self.work_dir,
+            config_file=self.config_file,
             output=self.output,
-            config_path=self.config_file,
         )
         print(f"wrote {path}", file=sys.stderr)
 

@@ -24,9 +24,12 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from sweets.core import Workflow
 
 __all__ = ["build_report"]
 
@@ -43,40 +46,43 @@ class _Section:
 
 
 def build_report(
-    work_dir: Path,
+    config_file: Path,
     output: Optional[Path] = None,
-    config_path: Optional[Path] = None,
 ) -> Path:
     """Render an HTML report for a completed sweets run.
 
     Parameters
     ----------
-    work_dir
-        The sweets work directory — the one that contains ``dolphin/``
-        after a successful ``sweets run``.
+    config_file
+        Path to the ``sweets_config.yaml`` used for the run. A work
+        directory containing a ``sweets_config.yaml`` is also accepted
+        and resolved to the yaml inside it.
     output
         Where to write the report. Defaults to
         ``<work_dir>/sweets_report.html``.
-    config_path
-        Path to the ``sweets_config.yaml`` used for the run. Defaults
-        to the first ``*.yaml`` found in ``work_dir``.
 
     Returns
     -------
     Path
         The report path.
     """
-    work_dir = Path(work_dir).resolve()
+    from sweets.core import Workflow
+
+    config_file = Path(config_file).resolve()
+    if config_file.is_dir():
+        config_file = config_file / "sweets_config.yaml"
+    assert config_file.is_file(), f"Config file not found: {config_file}"
+
+    workflow = Workflow.from_yaml(config_file)
+    work_dir = Path(workflow.work_dir).resolve()
     dolphin_dir = work_dir / "dolphin"
     assert dolphin_dir.exists(), f"No dolphin/ under {work_dir}"
 
     if output is None:
         output = work_dir / "sweets_report.html"
-    if config_path is None:
-        config_path = _find_config(work_dir)
 
     sections: list[_Section] = []
-    sections.append(_build_header(work_dir, config_path))
+    sections.append(_build_header(workflow, config_file))
     sections.append(_build_raster_section(dolphin_dir, "velocity"))
     sections.append(_build_raster_section(dolphin_dir, "temporal_coherence"))
     sections.append(_build_raster_section(dolphin_dir, "longest_displacement"))
@@ -94,37 +100,32 @@ def build_report(
 # ---------------------------------------------------------------------------
 
 
-def _build_header(work_dir: Path, config_path: Optional[Path]) -> _Section:
+def _build_header(workflow: "Workflow", config_path: Path) -> _Section:
     rows: list[tuple[str, str]] = [
-        ("Work directory", str(work_dir)),
+        ("Work directory", str(workflow.work_dir)),
+        ("Config file", str(config_path)),
         ("Generated", datetime.now().isoformat(timespec="seconds")),
     ]
 
-    cfg: dict[str, Any] = {}
-    if config_path is not None and config_path.exists():
-        rows.append(("Config file", str(config_path)))
-        cfg = _load_yaml(config_path) or {}
+    if workflow.bbox:
+        rows.append(("AOI (bbox)", _fmt_bbox(workflow.bbox)))
+    elif workflow.wkt:
+        rows.append(("AOI (WKT)", _truncate(str(workflow.wkt), 90)))
 
-    bbox = cfg.get("bbox")
-    if bbox:
-        rows.append(("AOI (bbox)", _fmt_bbox(bbox)))
-    elif cfg.get("wkt"):
-        rows.append(("AOI (WKT)", _truncate(str(cfg["wkt"]), 90)))
-
-    search = cfg.get("search") or {}
-    src_kind = search.get("kind", "?")
-    rows.append(("Source", src_kind))
-    for k in ("track", "frame", "frequency", "polarizations", "swaths"):
-        v = search.get(k)
+    search = workflow.search
+    rows.append(("Source", search.kind))
+    # `model_dump(exclude_none=True)` gives us a uniform view across the
+    # discriminated-union variants so we don't have to hard-code which
+    # optional fields each Search subclass carries.
+    search_dict = search.model_dump(exclude_none=True)
+    for k in ("track", "frame", "frequency", "polarizations", "swaths", "burst_ids"):
+        v = search_dict.get(k)
         if v is not None:
             rows.append((f"search.{k}", str(v)))
 
-    start = search.get("start")
-    end = search.get("end")
-    if start or end:
-        rows.append(("Date range", f"{start} to {end}"))
+    rows.append(("Date range", f"{search.start.date()} to {search.end.date()}"))
 
-    wall = _wall_time(work_dir)
+    wall = _wall_time(workflow.work_dir)
     if wall is not None:
         rows.append(("Wall time (est.)", f"{wall}"))
 
@@ -381,28 +382,6 @@ def _longest_timeseries_pair(ts_dir: Path) -> Optional[tuple[Path, datetime, dat
             best_span = span
             best = (p, d1, d2)
     return best
-
-
-def _find_config(work_dir: Path) -> Optional[Path]:
-    candidates = sorted(
-        p
-        for p in work_dir.glob("*.yaml")
-        if p.name not in {"dolphin_config.yaml"} and not p.name.startswith(".")
-    )
-    return candidates[0] if candidates else None
-
-
-def _load_yaml(path: Path) -> Optional[dict[str, Any]]:
-    try:
-        import yaml  # type: ignore[import-untyped]
-    except ImportError:
-        return None
-    try:
-        with open(path) as f:
-            return yaml.safe_load(f)
-    except Exception as e:
-        logger.warning(f"Could not parse {path}: {e}")
-        return None
 
 
 def _fmt_bbox(bbox: Any) -> str:

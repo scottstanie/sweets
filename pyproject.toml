@@ -205,7 +205,7 @@ cuda = "12"
 [tool.pixi.environments]
 # `cpu` is folded into every CPU environment so isce3 is always present.
 default = { features = ["test", "plotting", "cpu"], solve-group = "default" }
-test = { features = ["test", "cpu"], solve-group = "default" }
+test = { features = ["test", "plotting", "cpu"], solve-group = "default" }
 plotting = { features = ["plotting", "cpu"], solve-group = "default" }
 minimal = { features = ["cpu"], solve-group = "default" }
 # GPU environment: same extras as `default` but swaps isce3 -> isce3-cuda.

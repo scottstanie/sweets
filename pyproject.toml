@@ -85,13 +85,13 @@ sweets = "sweets.cli:main"
 # pixi: canonical environment definition
 # ----------------------------------------------------------------------------
 
-[tool.pixi.project]
+[tool.pixi.workspace]
 channels = ["conda-forge"]
 platforms = ["osx-arm64", "linux-64"]
 
 [tool.pixi.pypi-dependencies]
 sweets = { path = ".", editable = true }
-# Use the maintained forks. Upstream isce-framework/s1-reader has a numpy 2
+# Use the recently-updated forks. Upstream isce-framework/s1-reader has a numpy 2
 # incompat (polyfit scalar regression, see sweets#132); upstream
 # opera-adt/COMPASS still uses np.string_ / np.unicode_ which were removed
 # in numpy 2. Both forks restore numpy-2 compatibility on develop-scott.
@@ -102,14 +102,16 @@ compass = { git = "https://github.com/scottstanie/COMPASS.git", branch = "develo
 # that the sweets tropo step builds on, plus the OPERA CSLC download
 # helpers used by the OperaCslcSearch source and the NISAR GSLC helpers
 # used by NisarGslcSearch.
-opera-utils = { git = "https://github.com/scottstanie/opera-utils.git", branch = "develop-scott" }
+opera-utils = { git = "https://github.com/scottstanie/opera-utils.git", branch = "develop-scott", extras = [
+  "all",
+] }
 # scottstanie/dolphin@develop-scott carries the YamlModel commented-yaml
 # fix for Union-of-submodels JSON schema, which unblocks the
 # `Workflow.search: BurstSearch | OperaCslcSearch | NisarGslcSearch`
 # discriminated union.
 dolphin = { git = "https://github.com/scottstanie/dolphin.git", branch = "develop-scott" }
 # scottstanie/spurt@develop-scott is significantly ahead of upstream
-# isce-framework/spurt for temporal phase unwrapping — performance
+# isce-framework/spurt for temporal phase unwrapping - performance
 # fixes, macOS multiprocessing memory fix, richer logging, reader-
 # interface cleanups. dolphin only pulls `spurt` transitively, so
 # pinning the fork explicitly here gets everyone who sets
@@ -120,17 +122,17 @@ spurt = { git = "https://github.com/scottstanie/spurt.git", branch = "develop-sc
 [tool.pixi.dependencies]
 python = ">=3.11"
 pip = ">=21.3"
-# Heavy native / conda-only deps. (compass and opera-utils are intentionally
-# NOT here — they come from scottstanie/<repo> via [tool.pixi.pypi-dependencies]
-# above so we get the numpy 2 fixes and the new tropo workflow.)
-# isce3 is NOT shared — it lives in the `cpu` / `gpu` features below so
+# Heavy native / conda-only deps.
+# compass and opera-utils are intentionally not here - they come from scottstanie/<repo>
+#  via [tool.pixi.pypi-dependencies]
+# isce3 is NOT shared - it lives in the `cpu` / `gpu` features below so
 # users on CUDA Linux boxes can select the `gpu` environment and get
 # isce3-cuda (GPU-accelerated geocoding / crossmul / resampling). Every
 # existing environment folds the `cpu` feature in by default.
 gdal = "*"
 libgdal-netcdf = "*"
 # Pure-python deps mirrored from [project.dependencies] so the env solves
-# fully through conda when possible. (dolphin is intentionally NOT here —
+# fully through conda when possible. (dolphin is intentionally NOT here -
 # it comes from scottstanie/dolphin@develop-scott via the pypi-dependencies
 # block above.)
 asf_search = "*"
@@ -172,7 +174,7 @@ cartopy = "*"
 matplotlib = "*"
 colorcet = "*"
 
-# CPU (default) isce3 build — works on every platform sweets supports.
+# CPU (default) isce3 build - works on every platform sweets supports.
 [tool.pixi.feature.cpu.dependencies]
 isce3 = ">=0.24"
 
@@ -204,7 +206,7 @@ version_scheme = "no-guess-dev" # Will not guess the next version
 
 
 [tool.black]
-target-version = ["py311", "py312", "py313"]
+target-version = ["py311", "py312", "py313", "py314"]
 preview = true
 
 [tool.isort]

@@ -1,43 +1,38 @@
 # sweets
 [![pre-commit.ci status](https://results.pre-commit.ci/badge/github/isce-framework/sweets/main.svg)](https://results.pre-commit.ci/latest/github/isce-framework/sweets/main)
 
-End-to-end InSAR workflow that turns a single AOI + date range into unwrapped
-interferograms, a displacement timeseries and a velocity raster. sweets handles
-the messy parts — burst-subset downloading, geocoding, DEM + water-mask prep,
-geometry stitching — and hands off the heavy numerical work to
-[dolphin](https://github.com/isce-framework/dolphin) for phase linking,
-network selection, unwrapping, timeseries inversion and velocity estimation.
+End-to-end InSAR workflow that turns a single AOI + date range into unwrapped interferograms, a displacement timeseries and a velocity raster.
 
 ## What sweets gives you
 
-Three interchangeable input sources, all plumbed through the same
-`Workflow` object:
+- Cloud-optimized data downloads
+  - Sentinel-1 burst-subsetting via [`burst2safe`](https://github.com/ASFHyP3/burst2safe)
+  - OPERA CSLC-S1 and NISAR GSLC AOI-based subsetting
+- Geocoding
+- DEM + water-mask prep
+- Geometry stitching
+- Phase-linking, unwrapping, timeseries network inversion, and velocity estimation via [dolphin](https://github.com/isce-framework/dolphin)
 
-| `--source` | What it is | Tools used |
-|---|---|---|
-| `safe` *(default)* | Raw Sentinel-1 bursts, downloaded as just the bursts that intersect your AOI via `burst2safe`, then geocoded by COMPASS. | burst2safe, s1-reader, COMPASS |
-| `opera-cslc` | Pre-made [OPERA L2 CSLC-S1 HDF5s](https://www.jpl.nasa.gov/go/opera/products/cslc-product) from ASF DAAC, plus their matching CSLC-STATIC layers for geometry. Faster than `safe` when OPERA has produced for your AOI (mostly CONUS). | opera-utils |
-| `nisar-gslc` | Pre-made [NISAR L2 GSLC HDF5s](https://nisar.jpl.nasa.gov/) via CMR — L-band, already geocoded in UTM. Skips COMPASS and geometry stitching entirely; dolphin reads the grid straight from the HDF5 via tiny VRT wrappers that sweets injects. | opera-utils |
+Interchangeable input sources, accessible through the same `Workflow` object:
+
+| `--source`         | What it is                                                                                                                                                                                                                                                                                                                              | Tools used                     |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `safe` *(default)* | Raw Sentinel-1 bursts, downloaded as just the bursts that intersect your AOI via `burst2safe`, then geocoded by COMPASS.                                                                                                                                                                                                                | burst2safe, s1-reader, COMPASS |
+| `opera-cslc`       | Pre-made [OPERA L2 CSLC-S1 HDF5s](https://www.jpl.nasa.gov/go/opera/products/cslc-product) from ASF DAAC, plus their matching CSLC-STATIC layers for geometry. Faster than `safe` when OPERA has produced for your AOI (CONUS, see [OPERA product suite](https://www.jpl.nasa.gov/go/opera/products/cslc-product-suite/) for coverage). | opera-utils                    |
+| `nisar-gslc`       | Pre-made [NISAR L2 GSLC HDF5s](https://nisar.jpl.nasa.gov/) via CMR — L-band, already geocoded in UTM.                                                                                                                                                                                                                                  | opera-utils                    |
 
 An optional `--do-tropo` flag adds a post-dolphin OPERA L4 TROPO-ZENITH
 correction step for `safe` and `opera-cslc` (not yet wired for NISAR).
 
-Outputs land under `<work_dir>/dolphin/`:
-
-- `interferograms/<date1>_<date2>.int.tif` + `.cor.tif`
-- `unwrapped/<date1>_<date2>.unw.tif` + `.unw.conncomp.tif`
-- `timeseries/<date1>_<date2>.tif`, `velocity.tif`, `reference_point.txt`
-- with `--do-tropo`: `tropo/` and `tropo_corrected/<pair>.tropo_corrected.unw.tif`
-
-Timeseries and velocity rasters are in meters and meters/year, with the
-radar wavelength auto-detected from the source (S1, OPERA, NISAR).
-
 ## Install
 
-sweets is pixi-first. The `[tool.pixi.*]` sections in `pyproject.toml` are the
-canonical environment definition and pin the specific forks of `s1-reader`,
-`COMPASS`, `opera-utils` and `dolphin` that carry the numpy 2 fixes and the
-new workflows sweets uses.
+Sweets is available on `conda-forge`:
+
+```bash
+conda install -c conda-forge sweets
+```
+
+We recommend [pixi](https://pixi.sh/) for managing local environments.
 
 ```bash
 git clone https://github.com/isce-framework/sweets.git && cd sweets

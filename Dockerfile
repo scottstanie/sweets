@@ -94,7 +94,7 @@ RUN pixi shell-hook -e default > /activate.sh && \
 FROM --platform=linux/amd64 ubuntu:24.04 AS production
 
 LABEL org.opencontainers.image.description="Container for sweets InSAR workflows"
-LABEL org.opencontainers.image.authors="Scott Staniewicz <scott.j.staniewicz@jpl.nasa.gov>"
+LABEL org.opencontainers.image.authors="Scott Staniewicz <scott.stanie@gmail.com>"
 LABEL org.opencontainers.image.url="https://github.com/isce-framework/sweets"
 LABEL org.opencontainers.image.source="https://github.com/isce-framework/sweets"
 LABEL org.opencontainers.image.licenses="BSD-3-Clause OR Apache-2.0"

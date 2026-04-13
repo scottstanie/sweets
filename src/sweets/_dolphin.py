@@ -19,6 +19,7 @@ above here.
 
 from __future__ import annotations
 
+from math import cos, floor, log2, radians
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Optional
 
@@ -32,7 +33,23 @@ if TYPE_CHECKING:
     from dolphin.workflows.displacement import OutputPaths
 
 
-UnwrapMethod = Literal["snaphu", "spurt", "whirlwind", "phass"]
+UnwrapMethod = Literal["snaphu", "spurt", "whirlwind"]
+
+
+def _estimate_snaphu_tiles_from_bounds(
+    bounds: tuple[float, float, float, float], strides: tuple[int, int]
+) -> tuple[int, int]:
+    """Estimate a square SNAPHU tile grid from geographic bounds."""
+    west, south, east, north = bounds
+    center_lat = (south + north) / 2
+    lat_size_m = abs(north - south) * 111_320.0
+    lon_size_m = abs(east - west) * 111_320.0 * abs(cos(radians(center_lat)))
+    # For ~1000x1000 outputs, use 2x2 tiles. Every doubling adds one tile.
+    approx_rows = lat_size_m / (10.0 * strides[0])
+    approx_cols = lon_size_m / (5.0 * strides[1])
+    max_side = max(approx_rows, approx_cols)
+    tile_count = 1 if max_side < 1000 else floor(log2(max_side / 1000.0)) + 2
+    return (tile_count, tile_count)
 
 
 class DolphinOptions(BaseModel):
@@ -73,7 +90,7 @@ class DolphinOptions(BaseModel):
         description="Form nearest-N interferograms (by index) for the network.",
     )
     nearest_n_coherence: int = Field(
-        default=3,
+        default=1,
         ge=1,
         description="Save N nearest-neighbor multilooked coherence rasters.",
     )
@@ -82,20 +99,25 @@ class DolphinOptions(BaseModel):
         description="Unwrapping algorithm to invoke through dolphin.",
     )
     n_parallel_unwrap: int = Field(
-        default=4,
+        default=2,
         ge=1,
         description="Parallel unwrapping jobs (interferograms in flight).",
     )
-    snaphu_ntiles: tuple[int, int] = Field(
-        default=(1, 1),
-        description="SNAPHU tile grid (rows, cols). (1,1) disables tiling.",
+    snaphu_ntiles: tuple[int, int] | Literal["auto"] = Field(
+        default="auto",
+        description="SNAPHU tile grid (rows, cols). 'auto' lets dolphin decide based on image size.",
+    )
+    snaphu_parallel_tiles: int = Field(
+        default=4,
+        ge=1,
+        description="Number of SNAPHU tiles to process in parallel (for each of `n_parallel_unwrap` jobs).",
     )
     snaphu_tile_overlap: tuple[int, int] = Field(
-        default=(200, 200),
+        default=(300, 300),
         description="SNAPHU tile overlap (rows, cols).",
     )
     snaphu_cost: Literal["defo", "smooth"] = Field(
-        default="defo",
+        default="smooth",
         description="SNAPHU statistical cost mode.",
     )
     run_timeseries: bool = Field(
@@ -109,21 +131,15 @@ class DolphinOptions(BaseModel):
             " Harmless on machines without a GPU — dolphin falls back to CPU."
         ),
     )
-    threads_per_worker: int = Field(
-        default=4,
-        ge=1,
-        description="Threads per dolphin worker (sets OMP_NUM_THREADS).",
-    )
     n_parallel_bursts: int = Field(
         default=1,
         ge=1,
         description=(
-            "Number of separate burst stacks dolphin processes in parallel during"
-            " phase linking."
+            "Number of parallel burst stacks (S1) or blocks (NISAR) to process during phase linking."
         ),
     )
     block_shape: tuple[int, int] = Field(
-        default=(512, 512),
+        default=(256, 256),
         description="Block shape (rows, cols) used for streaming I/O.",
     )
 
@@ -173,15 +189,25 @@ def build_displacement_config(
     work_directory = Path(work_directory).resolve()
     work_directory.mkdir(parents=True, exist_ok=True)
 
+    if options.snaphu_ntiles == "auto":
+        snaphu_tiles = (
+            (1, 1)
+            if bounds is None
+            else _estimate_snaphu_tiles_from_bounds(bounds, options.strides)
+        )
+    else:
+        snaphu_tiles = options.snaphu_ntiles
+
     unwrap_options: dict = {
         "unwrap_method": options.unwrap_method,
         "n_parallel_jobs": options.n_parallel_unwrap,
     }
     if options.unwrap_method == "snaphu":
         unwrap_options["snaphu_options"] = {
-            "ntiles": list(options.snaphu_ntiles),
+            "ntiles": list(snaphu_tiles),
             "tile_overlap": list(options.snaphu_tile_overlap),
             "cost": options.snaphu_cost,
+            "single_tile_reoptimize": True,  # always better
         }
 
     output_options: dict = {
@@ -205,7 +231,7 @@ def build_displacement_config(
             "input_options": input_options,
             "worker_settings": {
                 "gpu_enabled": options.gpu_enabled,
-                "threads_per_worker": options.threads_per_worker,
+                "threads_per_worker": 2,
                 "n_parallel_bursts": options.n_parallel_bursts,
                 "block_shape": list(options.block_shape),
             },
@@ -217,6 +243,7 @@ def build_displacement_config(
                 },
                 "use_evd": options.use_evd,
                 "output_reference_idx": 0,
+                "max_num_compressed": 5,
             },
             "interferogram_network": {
                 "max_bandwidth": options.max_bandwidth,
@@ -225,6 +252,7 @@ def build_displacement_config(
             "timeseries_options": {
                 "run_inversion": options.run_timeseries,
                 "run_velocity": options.run_timeseries,
+                "apply_mask_to_timeseries": True,  # more commonly requested
             },
             "output_options": output_options,
         }

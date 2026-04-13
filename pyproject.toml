@@ -152,6 +152,19 @@ sardem = "*"
 sentineleof = "*"
 shapely = ">=2.0"
 tyro = "*"
+# compass runtime deps. compass's pyproject.toml has no [project.dependencies],
+# so pip/uv-installed compass (from scottstanie/COMPASS@develop-scott) comes
+# with zero runtime deps - they live only in compass's environment.yml and the
+# conda-forge compass-feedstock meta.yaml. We mirror the subset sweets exercises
+# here so the conda solver pulls them in. dem_stitcher / progressbar are
+# RAiDER-path only and deliberately omitted.
+scikit-image = "*"
+pillow = "*"
+pysolid = "*"
+"ruamel.yaml" = "*"
+yamale = "*"
+lxml = "*"
+scipy = "*"
 
 [tool.pixi.tasks]
 test = "pytest"

@@ -37,12 +37,12 @@ import rioxarray as rxr
 from pydantic import BaseModel, Field
 from shapely import wkt as shp_wkt
 
-from ._log import get_log, log_runtime
+from loguru import logger
+
+from ._log import log_runtime
 
 if TYPE_CHECKING:
     pass
-
-logger = get_log(__name__)
 
 # Sentinel-1 C-band carrier wavelength used by OPERA CSLCs and burst2safe
 # SAFEs alike.

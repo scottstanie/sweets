@@ -7,7 +7,7 @@
 - **OPERA CSLC source.** A second SLC source `OperaCslcSearch` skips
   burst2safe + COMPASS entirely and pulls pre-made OPERA CSLC HDF5s
   (and the matching CSLC-STATIC layers) directly from ASF DAAC. Pick
-  it via `sweets config --source opera-cslc`. Locked to OPERA's 5 m × 10 m
+  it via `sweets config --source opera-cslc`. Locked to OPERA's 5 m x 10 m
   posting; great for CONUS where OPERA has produced for the AOI.
 - **NISAR GSLC source.** A third source class `NisarGslcSearch` wraps
   `opera_utils.nisar.run_download` to fetch pre-geocoded NISAR GSLC

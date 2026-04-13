@@ -10,10 +10,10 @@ with the same external shape (an AOI, a date range, an optional track and
 - :class:`OperaCslcSearch` — wraps :func:`opera_utils.download.download_cslcs`
   + :func:`opera_utils.download.download_cslc_static_layers` to grab
   pre-geocoded OPERA CSLC HDF5s + their static layers from ASF DAAC. Skips
-  COMPASS entirely; locked to OPERA's 5 m × 10 m posting; CONUS-friendly
+  COMPASS entirely; locked to OPERA's 5 m x 10 m posting; CONUS-friendly
   but coverage depends on what OPERA has actually produced for the AOI.
 - :class:`NisarGslcSearch` — wraps :func:`opera_utils.nisar.run_download`
-  to grab pre-geocoded NISAR GSLC HDF5s (L-band, UTM, 5×10 m posting)
+  to grab pre-geocoded NISAR GSLC HDF5s (L-band, UTM, 5x10 m posting)
   with CMR-based search and optional bbox-level subsetting. Skips COMPASS
   and static layer stitching (NISAR GSLCs have no separate static layers
   product). Coverage and availability depend on NISAR's acquisition plan.
@@ -34,10 +34,9 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 from shapely import wkt as shp_wkt
 from shapely.geometry import Polygon, box
 
-from ._log import get_log, log_runtime
+from loguru import logger
 
-logger = get_log(__name__)
-
+from ._log import log_runtime
 
 FlightDirection = Literal["ASCENDING", "DESCENDING"]
 
@@ -285,7 +284,7 @@ class OperaCslcSearch(YamlModel):
     Wraps :func:`opera_utils.download.download_cslcs` and
     :func:`opera_utils.download.download_cslc_static_layers` to fetch
     pre-geocoded OPERA CSLC HDF5s + their per-burst static layers from the
-    ASF DAAC. Posting is whatever OPERA produced (currently 5 m × 10 m for
+    ASF DAAC. Posting is whatever OPERA produced (currently 5 m x 10 m for
     Sentinel-1 OPERA CSLCs); use :class:`BurstSearch` instead if you need
     a custom posting.
     """
@@ -863,7 +862,7 @@ class NisarGslcSearch(YamlModel):
                 logger.warning(f"NISAR: download failed for {short}: {e}; skipping.")
                 continue
             # NISAR HDF5s store coordinates as separate xCoordinates /
-            # yCoordinates 1D arrays, not as CF-compliant CRS metadata, so
+            # yCoordinates 1D arrays. Complex data makes CF-compliance hard.
             # GDAL's HDF5 driver reads an identity geotransform for the
             # subdataset. Wrap each polarization in a tiny VRT that injects
             # the real geotransform + SRS on top of the HDF5 subdataset —

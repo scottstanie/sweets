@@ -42,6 +42,7 @@ dependencies = [
   "burst2safe",
   "dolphin",
   "h5py",
+  "loguru",
   "numpy",
   # opera-utils comes from scottstanie/opera-utils@develop-scott via the
   # pixi pypi-dependencies block (carries the tropo workflow); a permissive
@@ -135,6 +136,7 @@ libgdal-netcdf = "*"
 asf_search = "*"
 burst2safe = "*"
 h5py = ">=3.6"
+loguru = "*"
 numpy = ">=1.25"
 pandas = "*"
 pydantic = ">=2.1"

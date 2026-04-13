@@ -27,11 +27,9 @@ import numpy as np
 from osgeo import gdal
 from scipy import ndimage
 
-from ._log import get_log
+from loguru import logger
 
 gdal.UseExceptions()
-
-logger = get_log(__name__)
 
 TILE_URL_BASE = "https://asf-dem-west.s3.amazonaws.com/WATER_MASK/TILES/"
 

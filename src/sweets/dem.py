@@ -5,14 +5,13 @@ from pathlib import Path
 from typing import Tuple
 
 import sardem.dem
+from loguru import logger
 
-from sweets._log import get_log, log_runtime
+from sweets._log import log_runtime
 from sweets._types import Filename
 from sweets._water_mask import WaterValue
 from sweets._water_mask import create_water_mask as _create_water_mask_tiles
 from sweets.utils import get_cache_dir
-
-logger = get_log(__name__)
 
 
 @log_runtime

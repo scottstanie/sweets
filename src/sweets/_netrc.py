@@ -1,10 +1,8 @@
+import getpass
 import netrc
 import os
 from pathlib import Path
 
-from rich.panel import Panel
-
-from ._log import console
 from ._types import Filename
 
 NASA_HOST = "urs.earthdata.nasa.gov"
@@ -17,12 +15,9 @@ def setup_nasa_netrc(netrc_file: Filename = "~/.netrc"):
         n = netrc.netrc(netrc_file)
         has_correct_permission = _file_is_0600(netrc_file)
         if not has_correct_permission:
-            # User has a netrc file, but it's not set up correctly
-            console.print(
-                "Your ~/.netrc file does not have the correct"
-                " permissions.\n[underline]Changing permissions to 0600"
-                " (read/write for user only).",
-                style="bold",
+            print(
+                "Your ~/.netrc file does not have the correct permissions.\n"
+                "Changing permissions to 0600 (read/write for user only)."
             )
             os.chmod(netrc_file, 0o600)
         # Check account exists, as well is having username and password
@@ -35,14 +30,14 @@ def setup_nasa_netrc(netrc_file: Filename = "~/.netrc"):
             return
     except FileNotFoundError:
         # User doesn't have a netrc file, make one
-        console.print("No ~/.netrc file found, creating one.", style="bold")
+        print("No ~/.netrc file found, creating one.")
         Path(netrc_file).write_text("")
         n = netrc.netrc(netrc_file)
 
     username, password = _get_username_pass()
     # Add NASA account to netrc file
     n.hosts[NASA_HOST] = (username, "", password)
-    console.print(f"Saving credentials to {netrc_file} (machine={NASA_HOST}).")
+    print(f"Saving credentials to {netrc_file} (machine={NASA_HOST}).")
     with open(netrc_file, "w") as f:
         f.write(str(n))
     # Set permissions to 0600 (read/write for user only)
@@ -57,14 +52,8 @@ def _file_is_0600(filename: Filename):
 
 def _get_username_pass():
     """If netrc is not set up, get username/password via command line input."""
-    console.print(
-        Panel("Please enter NASA Earthdata credentials to download ASF-hosted data.")
-    )
-    console.print(
-        "See the https://urs.earthdata.nasa.gov/users/new for signup info",
-        style="link https://urs.earthdata.nasa.gov/users/new",
-    )
-
-    username = console.input("Username: ")
-    password = console.input("Password (will not be displayed): ", password=True)
+    print("Please enter NASA Earthdata credentials to download ASF-hosted data.")
+    print("See https://urs.earthdata.nasa.gov/users/new for signup info")
+    username = input("Username: ")
+    password = getpass.getpass("Password (will not be displayed): ")
     return username, password

@@ -24,12 +24,12 @@ from typing import TYPE_CHECKING, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from ._log import get_log, log_runtime
+from loguru import logger
+
+from ._log import log_runtime
 
 if TYPE_CHECKING:
     from dolphin.workflows.displacement import OutputPaths
-
-logger = get_log(__name__)
 
 
 UnwrapMethod = Literal["snaphu", "spurt", "whirlwind", "phass"]

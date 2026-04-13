@@ -26,9 +26,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from ._log import get_log
-
-logger = get_log(__name__)
+from loguru import logger
 
 __all__ = ["build_report"]
 

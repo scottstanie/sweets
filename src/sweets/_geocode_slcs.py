@@ -11,11 +11,9 @@ import journal
 from compass import s1_geocode_stack
 from compass.utils.geo_runconfig import GeoRunConfig
 
-from ._log import get_log
+from loguru import logger
+
 from ._types import Filename
-
-logger = get_log(__name__)
-
 
 ModuleNames = Literal["s1_geocode_slc", "s1_static_layers"]
 

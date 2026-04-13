@@ -8,10 +8,9 @@ from dolphin import io, stitching
 from dolphin._types import Bbox
 from opera_utils import group_by_burst
 
-from ._log import get_log
-from ._types import Filename
+from loguru import logger
 
-logger = get_log(__name__)
+from ._types import Filename
 
 
 def stitch_geometry(

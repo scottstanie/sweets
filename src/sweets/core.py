@@ -28,11 +28,13 @@ from opera_utils import group_by_burst
 from pydantic import ConfigDict, Field, computed_field, field_validator, model_validator
 from shapely import wkt as shp_wkt
 
+from loguru import logger
+
 from ._burst_db import get_burst_db
 from ._dolphin import DolphinOptions, run_displacement
 from ._geocode_slcs import create_config_files, run_geocode, run_static_layers
 from ._geometry import stitch_geometry
-from ._log import get_log, log_runtime
+from ._log import log_runtime
 from ._netrc import setup_nasa_netrc
 from ._orbit import download_orbits
 from ._tropo import TropoOptions, run_tropo_correction
@@ -50,8 +52,6 @@ Source = Annotated[
     Union[BurstSearch, OperaCslcSearch, NisarGslcSearch],
     Field(discriminator="kind"),
 ]
-
-logger = get_log(__name__)
 
 
 class Workflow(YamlModel):
@@ -462,7 +462,7 @@ class Workflow(YamlModel):
         if top.num_candidate_bursts == top.total_num_bursts:
             logger.info(
                 f"Missing-data filter: all {top.total_num_bursts} CSLCs form a"
-                f" complete {top.num_burst_ids}-burst × {top.num_dates}-date"
+                f" complete {top.num_burst_ids}-burst x {top.num_dates}-date"
                 " stack; nothing to exclude."
             )
             return gslc_files
@@ -470,7 +470,7 @@ class Workflow(YamlModel):
         logger.info(f"Missing-data filter: {len(options)} consistent subset option(s).")
         print_with_rich(options, use_stderr=False)
         logger.info(
-            f"Keeping option #1: {top.num_burst_ids} burst(s) ×"
+            f"Keeping option #1: {top.num_burst_ids} burst(s) x"
             f" {top.num_dates} date(s) = {top.total_num_bursts} CSLCs"
             f" (excluding {top.num_candidate_bursts - top.total_num_bursts}"
             " partial-coverage CSLCs)."

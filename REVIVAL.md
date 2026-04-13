@@ -100,35 +100,35 @@ output quality)
 
 ## What changed
 
-| layer | before | after |
-|---|---|---|
-| **download (default)** | `ASFQuery` → ASF API + wget/aria2c, full S1 frames | `BurstSearch` → `burst2safe.burst2stack`, just the bursts that intersect the AOI |
-| **download (alt source: OPERA)** | n/a | `OperaCslcSearch` → `opera_utils.download.{search,download}_cslcs` for pre-made OPERA CSLCs, plus `download_cslc_static_layers`. Pick via `--source opera-cslc`; locked to OPERA's 5×10 m posting. |
-| **download (alt source: NISAR)** | n/a | `NisarGslcSearch` → `opera_utils.nisar.run_download` for pre-geocoded NISAR GSLC HDF5s (L-band, UTM). Pick via `--source nisar-gslc --frequency A --polarizations HH`. Skips COMPASS + geometry stitching entirely; dolphin reads the grid from the HDF5 directly. Tropo not yet supported on this path. |
-| **s1-reader** | upstream `isce-framework/s1-reader` (broken on numpy 2, see #132) | `scottstanie/s1-reader@develop-scott` |
-| **COMPASS** | upstream `opera-adt/COMPASS` (np.string_/np.unicode_ → numpy 2 crash) | `scottstanie/COMPASS@develop-scott` |
-| **opera-utils** | conda-forge | `scottstanie/opera-utils@develop-scott` (carries the high-level tropo workflow + the CSLC download API + the NISAR download API + the Float16 GTIFF fix) |
-| **dolphin** | upstream | `scottstanie/dolphin@develop-scott` (carries the `_yaml_model._add_comments` fix for Union-of-submodels schemas) |
-| **geocoding** | COMPASS via `_geocode_slcs.py` | unchanged for `--source safe`; **skipped entirely** for `--source opera-cslc` |
-| **interferograms / stitch / unwrap / timeseries** | hand-rolled in `sweets.interferogram` + `sweets.core` + `dolphin.unwrap.run` | one call to `dolphin.workflows.displacement.run` via the new `sweets._dolphin` adapter |
-| **tropo correction** | n/a | new opt-in post-step (`--do-tropo`) wrapping `opera_utils.tropo.create_tropo_corrections_for_stack` + `apply_tropo_to_unwrapped` |
-| **CLI** | argparse, ~280 lines, manual group dict shuffling | `tyro`, 3 dataclass-style subcommands; `--source`, `--do-tropo`, positional `sweets run <config>` |
-| **packaging** | `pixi.toml` "thrown in" alongside the pip install | `pyproject.toml` is pixi-first; `[tool.pixi.*]` is the canonical env definition |
-| **web UI** | partial scaffolding (uncommitted) | moved to branch `web-ui-scaffold`; not in this PR |
+| layer                                             | before                                                                       | after                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **download (default)**                            | `ASFQuery` → ASF API + wget/aria2c, full S1 frames                           | `BurstSearch` → `burst2safe.burst2stack`, just the bursts that intersect the AOI                                                                                                                                                                                                                         |
+| **download (alt source: OPERA)**                  | n/a                                                                          | `OperaCslcSearch` → `opera_utils.download.{search,download}_cslcs` for pre-made OPERA CSLCs, plus `download_cslc_static_layers`. Pick via `--source opera-cslc`; locked to OPERA's 5x10 m posting.                                                                                                       |
+| **download (alt source: NISAR)**                  | n/a                                                                          | `NisarGslcSearch` → `opera_utils.nisar.run_download` for pre-geocoded NISAR GSLC HDF5s (L-band, UTM). Pick via `--source nisar-gslc --frequency A --polarizations HH`. Skips COMPASS + geometry stitching entirely; dolphin reads the grid from the HDF5 directly. Tropo not yet supported on this path. |
+| **s1-reader**                                     | upstream `isce-framework/s1-reader` (broken on numpy 2, see #132)            | `scottstanie/s1-reader@develop-scott`                                                                                                                                                                                                                                                                    |
+| **COMPASS**                                       | upstream `opera-adt/COMPASS` (np.string_/np.unicode_ → numpy 2 crash)        | `scottstanie/COMPASS@develop-scott`                                                                                                                                                                                                                                                                      |
+| **opera-utils**                                   | conda-forge                                                                  | `scottstanie/opera-utils@develop-scott` (carries the high-level tropo workflow + the CSLC download API + the NISAR download API + the Float16 GTIFF fix)                                                                                                                                                 |
+| **dolphin**                                       | upstream                                                                     | `scottstanie/dolphin@develop-scott` (carries the `_yaml_model._add_comments` fix for Union-of-submodels schemas)                                                                                                                                                                                         |
+| **geocoding**                                     | COMPASS via `_geocode_slcs.py`                                               | unchanged for `--source safe`; **skipped entirely** for `--source opera-cslc`                                                                                                                                                                                                                            |
+| **interferograms / stitch / unwrap / timeseries** | hand-rolled in `sweets.interferogram` + `sweets.core` + `dolphin.unwrap.run` | one call to `dolphin.workflows.displacement.run` via the new `sweets._dolphin` adapter                                                                                                                                                                                                                   |
+| **tropo correction**                              | n/a                                                                          | new opt-in post-step (`--do-tropo`) wrapping `opera_utils.tropo.create_tropo_corrections_for_stack` + `apply_tropo_to_unwrapped`                                                                                                                                                                         |
+| **CLI**                                           | argparse, ~280 lines, manual group dict shuffling                            | `tyro`, 3 dataclass-style subcommands; `--source`, `--do-tropo`, positional `sweets run <config>`                                                                                                                                                                                                        |
+| **packaging**                                     | `pixi.toml` "thrown in" alongside the pip install                            | `pyproject.toml` is pixi-first; `[tool.pixi.*]` is the canonical env definition                                                                                                                                                                                                                          |
+| **web UI**                                        | partial scaffolding (uncommitted)                                            | moved to branch `web-ui-scaffold`; not in this PR                                                                                                                                                                                                                                                        |
 
 ## Open issues this branch addresses
 
-| # | title | notes |
-|---|---|---|
-| #23 | "Can SLC data be downloaded in burst as the basic unit" | yes — that's the headline of this branch |
-| #27 | "Print out ASF Search query when configuring or starting download" | `BurstSearch.summary()` is logged before download |
-| #29 | "Make `--start`, `--stop` and `--do-step` command line arguments" | tyro `sweets run --starting-step N` |
-| #79 | "sweets looks for removed module in dolphin" | removed the legacy `dolphin.interferogram.Network` import path |
-| #80 | "`--data-dir` doesn't work in `sweets config`" | `--out-dir` on the new tyro CLI is honored end-to-end |
-| #85 | "Compatibility with `Burst2Safe`" | sweets now *uses* burst2safe |
-| #88 | "Refactor download to allow OPERA gslcs" | done — `OperaCslcSearch` source class, `--source opera-cslc` CLI flag |
-| #107 | "Sweets only checks for presence of files not of files needed" | `existing_safes()` is now a single, easy-to-extend hook; an integrity check belongs there |
-| #132 | "Error in GSLC generation step" (numpy 2 polyfit) | fixed by switching to `scottstanie/s1-reader@develop-scott` |
+| #    | title                                                              | notes                                                                                     |
+| ---- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| #23  | "Can SLC data be downloaded in burst as the basic unit"            | yes — that's the headline of this branch                                                  |
+| #27  | "Print out ASF Search query when configuring or starting download" | `BurstSearch.summary()` is logged before download                                         |
+| #29  | "Make `--start`, `--stop` and `--do-step` command line arguments"  | tyro `sweets run --starting-step N`                                                       |
+| #79  | "sweets looks for removed module in dolphin"                       | removed the legacy `dolphin.interferogram.Network` import path                            |
+| #80  | "`--data-dir` doesn't work in `sweets config`"                     | `--out-dir` on the new tyro CLI is honored end-to-end                                     |
+| #85  | "Compatibility with `Burst2Safe`"                                  | sweets now *uses* burst2safe                                                              |
+| #88  | "Refactor download to allow OPERA gslcs"                           | done — `OperaCslcSearch` source class, `--source opera-cslc` CLI flag                     |
+| #107 | "Sweets only checks for presence of files not of files needed"     | `existing_safes()` is now a single, easy-to-extend hook; an integrity check belongs there |
+| #132 | "Error in GSLC generation step" (numpy 2 polyfit)                  | fixed by switching to `scottstanie/s1-reader@develop-scott`                               |
 
 ## Open PRs against `main` that should be revisited
 
@@ -201,11 +201,11 @@ the same Dec 2025 window, codified as three self-contained example
 notebooks under `docs/`. Everything passes and the output `velocity.tif`
 comes out in `meters / year` on every path.
 
-| notebook | source | track/frame | wall time | note |
-|---|---|---|---|---|
-| `example_s1_burst.ipynb` | `safe` (S1 bursts + COMPASS) | T071 desc, IW2 | ~5 min | 5 cycles |
-| `example_opera_cslc.ipynb` | `opera-cslc` | T071 desc | ~5 min | 5 cycles |
-| `example_nisar.ipynb` | `nisar-gslc` | T034 asc frame 18 | ~1 min | 2 cycles |
+| notebook                   | source                       | track/frame       | wall time | note     |
+| -------------------------- | ---------------------------- | ----------------- | --------- | -------- |
+| `example_s1_burst.ipynb`   | `safe` (S1 bursts + COMPASS) | T071 desc, IW2    | ~5 min    | 5 cycles |
+| `example_opera_cslc.ipynb` | `opera-cslc`                 | T071 desc         | ~5 min    | 5 cycles |
+| `example_nisar.ipynb`      | `nisar-gslc`                 | T034 asc frame 18 | ~1 min    | 2 cycles |
 
 **Bugs caught and fixed during this round:**
 
@@ -324,21 +324,21 @@ End-to-end run with `--source opera-cslc --do-tropo` against the same
 pecos AOI in
 `/Volumes/WD_BLACK_SN7100_4TB/Documents/Learning/s1-testing/pecos_opera/`.
 
-| stage | time |
-|---|---|
-| OPERA CSLC + CSLC-STATIC download from ASF | ~3 min (18 CSLCs + 9 static layers) |
-| stitch geometry from CSLC-STATIC | ~12 s |
-| dolphin (phase linking + ifg + unwrap + timeseries + velocity) | ~3.8 min |
-| tropo: search + crop + apply | ~70 s |
-| tropo: subtract differential from unwrapped phase | <1 s |
-| **total `sweets run --source opera-cslc --do-tropo`** | **~7.9 min** |
+| stage                                                          | time                                |
+| -------------------------------------------------------------- | ----------------------------------- |
+| OPERA CSLC + CSLC-STATIC download from ASF                     | ~3 min (18 CSLCs + 9 static layers) |
+| stitch geometry from CSLC-STATIC                               | ~12 s                               |
+| dolphin (phase linking + ifg + unwrap + timeseries + velocity) | ~3.8 min                            |
+| tropo: search + crop + apply                                   | ~70 s                               |
+| tropo: subtract differential from unwrapped phase              | <1 s                                |
+| **total `sweets run --source opera-cslc --do-tropo`**          | **~7.9 min**                        |
 
 Notes:
 - The OPERA path skips burst-db, orbits, and COMPASS entirely. For users
   in CONUS where OPERA has produced for the AOI, this is the faster
   default.
 - The tropo step found 18 OPERA L4 TROPO-ZENITH products for the date
-  range (one per CSLC sensing time across the 9 bursts × 2 dates).
+  range (one per CSLC sensing time across the 9 bursts x 2 dates).
   Pecos in summer is essentially noise — the corrected unwrapped phase
   std went from 4.61 → 4.68 rad, a non-meaningful change. The pipeline
   validation is structural; numerical validation needs a wetter or more
@@ -387,13 +387,13 @@ stitching → dolphin (phase linking → ifg → unwrap → timeseries → veloc
 
 Wall time:
 
-| stage | time |
-|---|---|
-| burst2safe download (2 SAFEs, ~770 MB each, IW2-only) | ~4 min |
-| COMPASS geocoding (10 CSLCs + 5 static layers) | ~4 min |
-| geometry stitching | ~12 s |
-| dolphin (phase linking + unwrap + timeseries + velocity) | ~2.7 min |
-| **total `sweets run`** | **~5.8 min** (after the SAFEs are downloaded) |
+| stage                                                    | time                                          |
+| -------------------------------------------------------- | --------------------------------------------- |
+| burst2safe download (2 SAFEs, ~770 MB each, IW2-only)    | ~4 min                                        |
+| COMPASS geocoding (10 CSLCs + 5 static layers)           | ~4 min                                        |
+| geometry stitching                                       | ~12 s                                         |
+| dolphin (phase linking + unwrap + timeseries + velocity) | ~2.7 min                                      |
+| **total `sweets run`**                                   | **~5.8 min** (after the SAFEs are downloaded) |
 
 Final outputs (under `dolphin/`):
 

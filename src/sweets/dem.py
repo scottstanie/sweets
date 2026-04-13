@@ -5,18 +5,18 @@ from pathlib import Path
 from typing import Tuple
 
 import sardem.dem
-from osgeo import gdal
+from loguru import logger
 
-from sweets._log import get_log, log_runtime
+from sweets._log import log_runtime
 from sweets._types import Filename
+from sweets._water_mask import WaterValue
+from sweets._water_mask import create_water_mask as _create_water_mask_tiles
 from sweets.utils import get_cache_dir
-
-logger = get_log(__name__)
 
 
 @log_runtime
 def create_dem(output_name: Filename, bbox: Tuple[float, float, float, float]) -> Path:
-    """Create the output file."""
+    """Download a Copernicus Global DEM clipped to `bbox`."""
     output_name = Path(output_name).resolve()
     if output_name.exists():
         logger.info(f"DEM already exists: {output_name}")
@@ -35,24 +35,24 @@ def create_dem(output_name: Filename, bbox: Tuple[float, float, float, float]) -
 
 @log_runtime
 def create_water_mask(
-    output_name: Path, bbox: Tuple[float, float, float, float]
+    output_name: Path,
+    bbox: Tuple[float, float, float, float],
+    buffer_meters: float = 0.0,
 ) -> Path:
-    """Create the output file."""
-    output_name = Path(output_name).resolve()
-    if output_name.exists():
-        logger.info(f"Water mask already exists: {output_name}")
-        return output_name
+    """Create a high-resolution binary land(1) / water(0) mask.
 
-    sardem.dem.main(
-        output_name=fspath(output_name),
-        bbox=bbox,
-        cache_dir=get_cache_dir(),
-        output_format="ROI_PAC",
-        data_source="NASA_WATER",
-        output_type="uint8",
+    Mosaics ASF's `WATER_MASK/TILES` product (OpenStreetMap + ESA WorldCover,
+    served as 5-degree GeoTIFFs at ~0.0001-deg native posting) for `bbox`,
+    inverts to dolphin's convention (0=water/invalid, 1=land/valid), and
+    optionally dilates the water class by `buffer_meters` to mask shoreline
+    noise.
+
+    Replaces the older ``NASA_WATER`` / SRTMSWBD path (broken on macOS,
+    restricted to ENVI) and the brief Copernicus-DEM threshold hack.
+    """
+    return _create_water_mask_tiles(
+        bounds=bbox,
+        output=Path(output_name).resolve(),
+        buffer_meters=buffer_meters,
+        water_value=WaterValue.ZERO,
     )
-    # Flip the mask so that 1 is land and 0 is water
-    ds = gdal.Open(fspath(output_name), gdal.GA_Update)
-    band = ds.GetRasterBand(1)
-    band.WriteArray(1 - band.ReadAsArray())
-    return output_name

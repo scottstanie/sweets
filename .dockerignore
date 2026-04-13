@@ -1,5 +1,63 @@
-**/__pycache__/*
-.mypy_cache
+# Pixi environment (will be recreated in container)
+.pixi/
+
+# Python bytecode
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
 build/
-data/
 dist/
+*.egg-info/
+*.egg
+
+# Test and coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Type checking caches
+.mypy_cache/
+.ruff_cache/
+
+# Documentation build
+docs/_build/
+site/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Test / scratch data (large files)
+tests/data/*.tif
+data/
+cropped/
+
+# Scratch and scripts (development only)
+scratch/
+scripts/
+
+# Old micromamba-era docker scripts (retained in repo for history but
+# not needed inside the pixi-based build)
+docker/
+
+# Docker files (not needed inside container)
+Dockerfile
+Dockerfile.gpu
+docker-compose.yml
+.dockerignore

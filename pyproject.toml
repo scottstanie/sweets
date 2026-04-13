@@ -2,6 +2,21 @@
 requires = ["setuptools>=64.0", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
+# ----------------------------------------------------------------------------
+# Installation
+#
+# Recommended: pixi (https://pixi.sh). The pixi config below is the canonical
+# environment definition; it pins the conda-forge versions of compass, isce3,
+# gdal etc. that cannot ship on PyPI, and points s1-reader at the maintained
+# fork at scottstanie/s1-reader@develop-scott.
+#
+#     pixi install              # solve + create the default env
+#     pixi run sweets --help    # run inside the env
+#
+# For users who prefer plain conda/mamba, an environment.yml synced from this
+# pyproject is provided at the repo root.
+# ----------------------------------------------------------------------------
+
 [project]
 name = "sweets"
 description = "Workflows for generating surface displacement maps using InSAR"
@@ -9,96 +24,161 @@ readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.11"
 
 classifiers = [
-  "Development Status :: 2 - Pre-Alpha",
+  "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
   "Programming Language :: Python :: 3",
   "License = file : LICENSE",
   "Operating System :: OS Independent",
 ]
 
-# The version will be written into a version.py upon install, auto-generated
-# see section: setuptools_scm
-# https://setuptools.pypa.io/en/latest/userguide/pyproject_config.html#dynamic-metadata
+# The version is written into _version.py at install time by setuptools_scm.
 dynamic = ["version"]
 
-
+# These are the pip-installable runtime deps. Several heavy native deps
+# (compass, isce3, gdal, libgdal-netcdf) are conda-only and live in
+# [tool.pixi.dependencies] below.
 dependencies = [
-  "dask",
+  "asf_search",
+  "burst2safe",
   "dolphin",
-  # Not pypi-installable
-  # "compass",
-  # "gdal",
-  # "libgdal-netcdf",
-  # "isce3",
   "h5py",
+  "loguru",
   "numpy",
-  "pandas",
-  "pyproj",
-  "requests",
-  "rich",
-  "shapely",
-  "geopandas",
-  "rioxarray",
+  # opera-utils comes from scottstanie/opera-utils@develop-scott via the
+  # pixi pypi-dependencies block (carries the tropo workflow); a permissive
+  # version pin here is fine for non-pixi installs.
   "opera-utils",
-  "pydantic",
+  "pandas",
+  "pydantic>=2.1",
+  "pyproj",
   "python-dateutil",
   "rasterio",
+  "requests",
+  "rich",
+  "rioxarray",
   "sardem",
   "sentineleof",
+  "shapely",
+  "tyro",
+]
+
+[project.optional-dependencies]
+web = [
+  "fastapi>=0.100",
+  "uvicorn[standard]",
+  "sqlmodel",
+  "python-multipart",
+  "websockets",
+  "titiler.core",
 ]
 
 [project.urls]
-Homepage = "https://github.com/scottstanie/sweets"
-"Bug Tracker" = "https://github.com/scottstanie/sweets/issues"
+Homepage = "https://github.com/isce-framework/sweets"
+"Bug Tracker" = "https://github.com/isce-framework/sweets/issues"
 
 # Entry points for the command line interface
 [project.scripts]
 sweets = "sweets.cli:main"
 
 
-[tool.pixi.project]
+# ----------------------------------------------------------------------------
+# pixi: canonical environment definition
+# ----------------------------------------------------------------------------
+
+[tool.pixi.workspace]
 channels = ["conda-forge"]
 platforms = ["osx-arm64", "linux-64"]
 
 [tool.pixi.pypi-dependencies]
 sweets = { path = ".", editable = true }
+# Use the recently-updated forks. Upstream isce-framework/s1-reader has a numpy 2
+# incompat (polyfit scalar regression, see sweets#132); upstream
+# opera-adt/COMPASS still uses np.string_ / np.unicode_ which were removed
+# in numpy 2. Both forks restore numpy-2 compatibility on develop-scott.
+s1reader = { git = "https://github.com/scottstanie/s1-reader.git", branch = "develop-scott" }
+compass = { git = "https://github.com/scottstanie/COMPASS.git", branch = "develop-scott" }
+# scottstanie/opera-utils@develop-scott carries the high-level
+# `create_tropo_corrections_for_stack` workflow + `search_tropo` CMR client
+# that the sweets tropo step builds on, plus the OPERA CSLC download
+# helpers used by the OperaCslcSearch source and the NISAR GSLC helpers
+# used by NisarGslcSearch.
+opera-utils = { git = "https://github.com/scottstanie/opera-utils.git", branch = "develop-scott", extras = [
+  "all",
+] }
+# scottstanie/dolphin@develop-scott carries the YamlModel commented-yaml
+# fix for Union-of-submodels JSON schema, which unblocks the
+# `Workflow.search: BurstSearch | OperaCslcSearch | NisarGslcSearch`
+# discriminated union.
+dolphin = { git = "https://github.com/scottstanie/dolphin.git", branch = "develop-scott" }
+# scottstanie/spurt@develop-scott is significantly ahead of upstream
+# isce-framework/spurt for temporal phase unwrapping - performance
+# fixes, macOS multiprocessing memory fix, richer logging, reader-
+# interface cleanups. dolphin only pulls `spurt` transitively, so
+# pinning the fork explicitly here gets everyone who sets
+# `dolphin.unwrap_method: spurt` in their sweets config onto the
+# supported version.
+spurt = { git = "https://github.com/scottstanie/spurt.git", branch = "develop-scott" }
 
 [tool.pixi.dependencies]
-python = ">=3.8"
+python = ">=3.11"
 pip = ">=21.3"
-wget = "*"
-git = "*"
-dask = ">=2022.6.0"
-dolphin = "*"
+# Heavy native / conda-only deps.
+# compass and opera-utils are intentionally not here - they come from scottstanie/<repo>
+#  via [tool.pixi.pypi-dependencies]
+# isce3 is NOT shared - it lives in the `cpu` / `gpu` features below so
+# users on CUDA Linux boxes can select the `gpu` environment and get
+# isce3-cuda (GPU-accelerated geocoding / crossmul / resampling). Every
+# existing environment folds the `cpu` feature in by default.
 gdal = "*"
-compass = ">=0.4.1"
 libgdal-netcdf = "*"
-isce3 = ">=0.24"
+# Pure-python deps mirrored from [project.dependencies] so the env solves
+# fully through conda when possible. (dolphin is intentionally NOT here -
+# it comes from scottstanie/dolphin@develop-scott via the pypi-dependencies
+# block above.)
+asf_search = "*"
+burst2safe = "*"
 h5py = ">=3.6"
+loguru = "*"
 numpy = ">=1.25"
 pandas = "*"
-pyproj = ">=3.2"
-requests = ">=2.10"
-rich = ">=12.0"
-shapely = ">=1.8"
-geopandas = "*"
-rioxarray = "*"
-opera-utils = ">=0.24"
 pydantic = ">=2.1"
+pyproj = ">=3.2"
 python-dateutil = "*"
 rasterio = "*"
+requests = ">=2.10"
+rich = ">=12.0"
+rioxarray = "*"
 sardem = "*"
 sentineleof = "*"
+shapely = ">=2.0"
+tyro = "*"
+# compass runtime deps. compass's pyproject.toml has no [project.dependencies],
+# so pip/uv-installed compass (from scottstanie/COMPASS@develop-scott) comes
+# with zero runtime deps - they live only in compass's environment.yml and the
+# conda-forge compass-feedstock meta.yaml. We mirror the subset sweets exercises
+# here so the conda solver pulls them in. dem_stitcher / progressbar are
+# RAiDER-path only and deliberately omitted.
+scikit-image = "*"
+pillow = "*"
+pysolid = "*"
+"ruamel.yaml" = "*"
+yamale = "*"
+lxml = "*"
+scipy = "*"
 
 [tool.pixi.tasks]
 test = "pytest"
-install = { depends-on = "pre-commit_install" }
+install = { depends-on = ["pre-commit_install"] }
 pre-commit_install = "pre-commit install"
+# Regenerate environment.yml from the pixi solve so non-pixi users have a
+# current conda env spec to fall back on.
+export-env = "pixi project export conda-environment > environment.yml"
 
 [tool.pixi.feature.test.dependencies]
 pytest = ">=8.3.5,<9"
 pytest-cov = "*"
 pytest-randomly = "*"
+pytest-recording = "*"
 pytest-xdist = "*"
 pre-commit = "*"
 mypy = "*"
@@ -106,13 +186,32 @@ mypy = "*"
 [tool.pixi.feature.plotting.dependencies]
 cartopy = "*"
 matplotlib = "*"
-colorcet = "*"
+geopandas = "*"
+ipywidgets = "*"
+
+# CPU (default) isce3 build - works on every platform sweets supports.
+[tool.pixi.feature.cpu.dependencies]
+isce3 = ">=0.24"
+
+# CUDA-accelerated isce3 for geometry / crossmul / resampling. Only
+# available on linux-64; conda-forge doesn't ship osx-arm64 builds.
+# Requires CUDA 12+ on the host. Activate with `pixi shell -e gpu`.
+[tool.pixi.feature.gpu.target.linux-64.dependencies]
+isce3-cuda = ">=0.24"
+
+[tool.pixi.feature.gpu.system-requirements]
+cuda = "12"
 
 [tool.pixi.environments]
-default = ["test", "plotting"]
-test = ["test"]
-plotting = ["plotting"]
-minimal = []
+# `cpu` is folded into every CPU environment so isce3 is always present.
+default = { features = ["test", "plotting", "cpu"], solve-group = "default" }
+test = { features = ["test", "plotting", "cpu"], solve-group = "default" }
+plotting = { features = ["plotting", "cpu"], solve-group = "default" }
+minimal = { features = ["cpu"], solve-group = "default" }
+# GPU environment: same extras as `default` but swaps isce3 -> isce3-cuda.
+# `solve-group` is deliberately separate so pixi doesn't try to reconcile
+# the CPU and GPU isce3 builds in a single resolution.
+gpu = { features = ["test", "plotting", "gpu"] }
 
 [tool.setuptools_scm]
 # https://github.com/pypa/setuptools_scm#configuration-parameters
@@ -122,7 +221,7 @@ version_scheme = "no-guess-dev" # Will not guess the next version
 
 
 [tool.black]
-target-version = ["py311", "py312", "py313"]
+target-version = ["py311", "py312", "py313", "py314"]
 preview = true
 
 [tool.isort]

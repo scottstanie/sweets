@@ -1,0 +1,48 @@
+name: default
+channels:
+- conda-forge
+- nodefaults
+dependencies:
+- cartopy *
+- matplotlib *
+- colorcet *
+- isce3 >=0.24
+- dolphin
+- python >=3.11
+- pip >=21.3
+- gdal *
+- libgdal-netcdf *
+- asf_search *
+- burst2safe *
+- h5py >=3.6
+- loguru *
+- numpy >=1.25
+- pandas *
+- pydantic >=2.1
+- pyproj >=3.2
+- python-dateutil *
+- rasterio *
+- requests >=2.10
+- rich >=12.0
+- rioxarray *
+- sardem *
+- sentineleof *
+- shapely >=2.0
+- tyro *
+- scikit-image *
+- sardem
+- sentineleof
+- pillow *
+- pysolid *
+- ruamel.yaml *
+- yamale *
+- lxml *
+- scipy *
+- pip
+- pip:
+  - -e .
+  - s1reader @ git+https://github.com/scottstanie/s1-reader.git@develop-scott
+  - compass @ git+https://github.com/scottstanie/COMPASS.git@develop-scott
+  - opera-utils[all] @ git+https://github.com/scottstanie/opera-utils.git@develop-scott
+  - dolphin @ git+https://github.com/scottstanie/dolphin.git@develop-scott
+  - spurt @ git+https://github.com/scottstanie/spurt.git@develop-scott

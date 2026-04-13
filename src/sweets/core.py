@@ -1,41 +1,61 @@
+"""End-to-end Sentinel-1 InSAR workflow.
+
+Two source paths share the same downstream pipeline:
+
+- ``BurstSearch`` (default): download burst-trimmed S1 SAFEs via burst2safe,
+  geocode them with COMPASS, then run dolphin.
+- ``OperaCslcSearch``: download pre-made OPERA CSLCs from ASF (skips COMPASS,
+  locked to OPERA's posting), then run dolphin.
+
+Optional post-step: tropospheric correction using OPERA L4 TROPO-ZENITH
+products via opera_utils.tropo.
+
+The workflow is defined as a single :class:`Workflow` Pydantic model that
+can be serialized to / loaded from a ``sweets_config.yaml``.
+"""
+
 from __future__ import annotations
 
-from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor, wait
+import shutil
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, wait
 from functools import partial
 from pathlib import Path
-from typing import Any, Literal, Optional, Tuple
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Optional, Union
 
-import h5py
-import numpy as np
-from dolphin import stitching, unwrap
-from dolphin.interferogram import Network
-from dolphin.utils import _format_date_pair, set_num_threads
-from dolphin.workflows.config import (
-    UnwrapOptions,
-    YamlModel,
-)
-from opera_utils import group_by_burst, group_by_date
+from dolphin.utils import set_num_threads
+from dolphin.workflows.config import YamlModel
+from opera_utils import group_by_burst
 from pydantic import ConfigDict, Field, computed_field, field_validator, model_validator
-from shapely import geometry, wkt
+from shapely import wkt as shp_wkt
+
+from loguru import logger
 
 from ._burst_db import get_burst_db
+from ._dolphin import DolphinOptions, run_displacement
 from ._geocode_slcs import create_config_files, run_geocode, run_static_layers
 from ._geometry import stitch_geometry
-from ._log import get_log, log_runtime
+from ._log import log_runtime
 from ._netrc import setup_nasa_netrc
 from ._orbit import download_orbits
+from ._tropo import TropoOptions, run_tropo_correction
 from ._types import Filename
 from .dem import create_dem, create_water_mask
-from .download import ASFQuery
-from .interferogram import InterferogramOptions, create_cor, create_ifg
+from .download import BurstSearch, NisarGslcSearch, OperaCslcSearch
 
-logger = get_log(__name__)
+if TYPE_CHECKING:
+    from dolphin.workflows.displacement import OutputPaths
 
-UNW_SUFFIX = ".unw.tif"
+# Discriminated union on the `kind` field. Pydantic dispatches directly to
+# the matching variant — much cleaner errors than a plain Union, which
+# tries each variant in order and reports failures from all of them.
+Source = Annotated[
+    Union[BurstSearch, OperaCslcSearch, NisarGslcSearch],
+    Field(discriminator="kind"),
+]
 
 
 class Workflow(YamlModel):
-    """Class for end-to-end processing of Sentinel-1 data."""
+    """End-to-end Sentinel-1 InSAR workflow configuration."""
 
     work_dir: Path = Field(
         default_factory=Path.cwd,
@@ -44,192 +64,192 @@ class Workflow(YamlModel):
     )
 
     bbox: Optional[tuple[float, float, float, float]] = Field(
-        None,
+        default=None,
         description=(
-            "Area of interest: [left, bottom, right, top] longitude/latitude "
-            "e.g. `bbox=(-150.2,65.0,-150.1,65.5)`"
+            "AOI as (left, bottom, right, top) in decimal degrees. Either"
+            " `bbox` or `wkt` must be set."
         ),
     )
     wkt: Optional[str] = Field(
-        None,
+        default=None,
+        description="AOI as a WKT polygon (or path to a `.wkt` file). Overrides bbox.",
+    )
+
+    search: Source = Field(
+        ...,
         description=(
-            "Well Known Text (WKT) string (overrides bbox). Must specify `bbox` or"
-            " `wkt`"
+            "Source of input SLCs. Either a `BurstSearch` (raw S1 bursts via"
+            " burst2safe + COMPASS) or an `OperaCslcSearch` (pre-made OPERA"
+            " CSLCs); discriminated by the `kind` field."
         ),
     )
 
+    dem_filename: Path = Field(
+        default_factory=lambda data: data["work_dir"] / "dem.tif",
+        description=(
+            "DEM in EPSG:4326. If left as the default, sweets downloads a"
+            " Copernicus DEM via sardem."
+        ),
+    )
+    dem_bbox: Optional[tuple[float, float, float, float]] = Field(
+        default=None,
+        description=(
+            "Optional AOI override for DEM download (left, bottom, right,"
+            " top) in decimal degrees. Use this when the default buffer"
+            " around the study-area `bbox` isn't enough — most commonly,"
+            " when running COMPASS on a `BurstSearch` whose full IW burst"
+            " footprint extends beyond the study area. If unset, sweets"
+            " picks a default: ~1 deg around `bbox` for BurstSearch (large"
+            " enough to cover a full IW burst) and ~0.25 deg around `bbox`"
+            " for NISAR / OPERA-CSLC sources (which are already geocoded"
+            " and only need the DEM for tropo + water-mask context)."
+        ),
+    )
+    water_mask_filename: Path = Field(
+        default_factory=lambda data: data["work_dir"] / "watermask.tif",
+        description=(
+            "Water mask in EPSG:4326 (uint8 GTiff, 1=land, 0=water). If left"
+            " as the default, sweets derives one from a Copernicus DEM."
+        ),
+    )
     orbit_dir: Path = Field(
-        Path("orbits"),
-        description="Directory for orbit files.",
+        default=Path("orbits"),
+        description="Directory for Sentinel-1 precise orbit files.",
         validate_default=True,
     )
 
-    asf_query: ASFQuery
-    skip_download_if_exists: bool = Field(
-        True,
-        description=(
-            "Don't re-query ASF if there's any existing data in the download directory."
-            " Otherwise, will re-query and only skip files that match checksums (done"
-            " by aria2)."
-        ),
-    )
-    dem_filename: Path = Field(
-        # requires that `work_dir` is specified earlier than `dem_filename`
-        default_factory=lambda data: data["work_dir"] / "dem.tif",
-        description=(
-            "Path to custom digital elevation model (DEM). If left out (default behaviour), sweets will download the copernicus DEM using the sardem package and will store it in `work_dir`. The DEM should be supplied as EPSG:4326."
-        ),
-    )
-    water_mask_filename: Optional[Path] = Field(
-        # requires that `work_dir` is specified earlier than `water_mask_filename`
-        default_factory=lambda data: data["work_dir"] / "watermask.flg",
-        description=(
-            "Path to custom water mask. If left out (default behaviour), sweets will download an SRTM-based watermask using the sardem package and will store it in `work_dir`. The DEM should be supplied as EPSG:4326."
-        ),
-    )
-    interferogram_options: InterferogramOptions = Field(
-        default_factory=InterferogramOptions
-    )
-    unwrap_options: UnwrapOptions = Field(
-        default_factory=UnwrapOptions,
-        description="Options for unwrapping after wrapped phase estimation.",
-    )
-    do_unwrap: bool = Field(
-        True,
-        description="Run the unwrapping step for all interferograms.",
-    )
     slc_posting: tuple[float, float] = Field(
-        (10, 5),
-        description="Spacing of geocoded SLCs (in meters) along the (y, x)-directions.",
+        default=(10, 5),
+        description="Geocoded SLC posting (y, x) in meters.",
     )
     pol_type: Literal["co-pol", "cross-pol"] = Field(
-        "co-pol",
-        description="Type of polarization to process for GSLCs",
+        default="co-pol",
+        description="Polarization type to geocode (COMPASS knob).",
+    )
+
+    dolphin: DolphinOptions = Field(
+        default_factory=DolphinOptions,
+        description="Configuration for the dolphin displacement workflow.",
+    )
+
+    tropo: TropoOptions = Field(
+        default_factory=TropoOptions,
+        description=(
+            "Configuration for the optional tropospheric correction step that"
+            " runs after dolphin. Off by default; set `tropo.enabled = true`"
+            " (or pass `--do-tropo` on the CLI) to turn it on."
+        ),
     )
 
     n_workers: int = Field(
-        1,
-        description="Number of workers to use for processing.",
+        default=4,
+        description="Process pool size for COMPASS geocoding.",
+        ge=1,
     )
     threads_per_worker: int = Field(
-        8,
-        description=(
-            "Number of threads per worker, set using OMP_NUM_THREADS. This affects the"
-            " number of threads used by isce3 geocodeSlc, as well as the number of"
-            " threads numpy uses."
-        ),
+        default=8,
+        description="OMP_NUM_THREADS for each geocoding worker.",
+        ge=1,
     )
     overwrite: bool = Field(
-        False,
-        description="Overwrite existing files.",
+        default=False,
+        description="Overwrite existing intermediate / output files.",
     )
-    model_config = ConfigDict(extra="allow")
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    # ------------------------------------------------------------------
+    # Validators
+    # ------------------------------------------------------------------
 
     @field_validator("wkt", mode="before")
     @classmethod
     def _check_file_and_parse_wkt(cls, v):
-        if v is not None:
-            if Path(v).exists():
-                v = Path(v).read_text().strip()
-
-            try:
-                wkt.loads(v)
-            except Exception as e:
-                raise ValueError(f"Invalid WKT string: {e}")
+        if v is None:
+            return v
+        if Path(v).exists():
+            v = Path(v).read_text().strip()
+        try:
+            shp_wkt.loads(v)
+        except Exception as e:
+            msg = f"Invalid WKT string: {e}"
+            raise ValueError(msg) from e
         return v
 
-    # Note: this model_validator's `info.data` only contains the fields that have
-    # been passed in by a user.
-    @model_validator(mode="before")
-    @classmethod
-    def _check_unset_dirs(cls, values: Any) -> "Workflow":
-        # TODO: Use the newer checks for fields set
-        if isinstance(values, dict):
-            if "asf_query" not in values:
-                values["asf_query"] = {}
-            elif isinstance(values["asf_query"], ASFQuery):
-                values["asf_query"] = values["asf_query"].model_dump(
-                    exclude_unset=True, by_alias=True
-                )
-            elif not isinstance(values["asf_query"], dict):
-                # forward validation of unknown object to ASFQuery
-                ASFQuery.model_validate(values["asf_query"])
-
-            # also if they passed a wkt to the outer constructor, we need to
-            # pass through to the ASF query
-            values["asf_query"]["wkt"] = values.get("asf_query", {}).get(
-                "wkt"
-            ) or values.get("wkt")
-            values["asf_query"]["bbox"] = values.get("asf_query", {}).get(
-                "bbox"
-            ) or values.get("bbox")
-            # sync the other way too:
-            values["wkt"] = values["asf_query"]["wkt"]
-            values["bbox"] = values["asf_query"]["bbox"]
-            if not values.get("bbox") and not values.get("wkt"):
-                raise ValueError("Must specify either `bbox` or `wkt`")
-
-        return values
-
-    # expanduser and resolve each of the dirs:
     @field_validator("work_dir", "orbit_dir")
     @classmethod
     def _expand_dirs(cls, v):
         return Path(v).expanduser().resolve()
 
-    # # while this one has all the fields
-    # @model_validator()
-    # def _move_inside_workdir(self):
-    #     # TODO: pydantic has made this easier with new attributes to check attrs set
-    #     if not values["_orbit_dir_is_set"]:
-    #         values["orbit_dir"] = (values["work_dir"] / values["orbit_dir"]).resolve()
-    #     if not values["_data_dir_is_set"] and "asf_query" in values:
-    #         values["asf_query"].out_dir = (
-    #             values["work_dir"] / values["asf_query"].out_dir
-    #         ).resolve()
+    @model_validator(mode="before")
+    @classmethod
+    def _sync_aoi(cls, values: Any) -> Any:
+        """Push the top-level bbox/wkt down into the search source.
 
-    #     return values
+        The outer ``Workflow.bbox`` / ``Workflow.wkt`` are the canonical AOI;
+        the nested ``search`` field (either BurstSearch or OperaCslcSearch)
+        gets the same bbox so the downloader knows what to fetch. Only
+        ``bbox`` is forced — ``search.wkt`` is left alone so non-rectangular
+        search polygons can be specified at the source level if a user wants.
+
+        If ``search`` is provided as a dict without ``kind``, default to
+        ``"safe"`` for backwards compatibility with existing configs.
+        """
+        if not isinstance(values, dict):
+            return values
+        if "search" not in values:
+            values["search"] = {}
+        elif isinstance(
+            values["search"], (BurstSearch, OperaCslcSearch, NisarGslcSearch)
+        ):
+            values["search"] = values["search"].model_dump(
+                exclude_unset=True, by_alias=True
+            )
+        if isinstance(values["search"], dict) and "kind" not in values["search"]:
+            values["search"]["kind"] = "safe"
+        outer_bbox = values.get("bbox")
+        outer_wkt = values.get("wkt")
+        inner = values["search"]
+        inner_bbox = inner.get("bbox")
+        inner_wkt = inner.get("wkt")
+        bbox = outer_bbox or inner_bbox
+        wkt_value = outer_wkt or inner_wkt
+        if not bbox and not wkt_value:
+            msg = "Must specify `bbox` or `wkt` (on Workflow or `search`)"
+            raise ValueError(msg)
+        if bbox is not None:
+            values["bbox"] = bbox
+            if not inner_bbox:
+                inner["bbox"] = bbox
+        if outer_wkt is not None:
+            values["wkt"] = outer_wkt
+            if not inner_wkt:
+                inner["wkt"] = outer_wkt
+        return values
 
     @model_validator(mode="after")
-    def _set_bbox_and_wkt(self, values):
-        # If they've specified a bbox, set the wkt
-        if not self.bbox:
-            self.bbox = wkt.loads(self.wkt).bounds
-        else:
-            # otherwise, make WKT just a 5 point polygon
-            self.wkt = wkt.dumps(geometry.box(*self.bbox))
-        # Check that bottom is lower than top, left is left of right
+    def _set_bbox_and_wkt(self) -> "Workflow":
+        # Derive bbox from wkt if only wkt was supplied; downstream code
+        # (DEM, dolphin bounds, etc.) all reads bbox, not wkt. We do NOT
+        # auto-fill wkt from bbox: nothing in the workflow reads outer wkt
+        # past this validator, and round-tripping a computed wkt was
+        # contaminating reload equality (the inner search would gain a
+        # wkt it never had on the first pass).
+        if self.bbox is None and self.wkt is not None:
+            self.bbox = shp_wkt.loads(self.wkt).bounds
+        assert self.bbox is not None
         if self.bbox[1] > self.bbox[3]:
-            raise ValueError(f"Latitude must be lower than top, got {self.bbox}")
+            msg = f"Latitude min must be lower than max, got {self.bbox}"
+            raise ValueError(msg)
         if self.bbox[0] > self.bbox[2]:
-            raise ValueError(f"Longitude max must be greater than min, got {self.bbox}")
+            msg = f"Longitude min must be lower than max, got {self.bbox}"
+            raise ValueError(msg)
         return self
 
-    def save(self, config_file: Filename = "sweets_config.yaml"):
-        """Save the workflow configuration."""
-        logger.info(f"Saving config to {config_file}")
-        self.to_yaml(config_file)
+    # ------------------------------------------------------------------
+    # Computed paths
+    # ------------------------------------------------------------------
 
-    @classmethod
-    def load(cls, config_file: Filename = "sweets_config.yaml"):
-        """Load the workflow configuration."""
-        logger.info(f"Loading config from {config_file}")
-        return cls.from_yaml(config_file)
-
-    # Override the constructor to allow recursively construct without validation
-    @classmethod
-    def construct(cls, **values):
-        cls.model_construct(**values)
-
-    @classmethod
-    def model_construct(cls, _fields_set=None, **values):
-        if "asf_query" not in values:
-            values["asf_query"] = ASFQuery.model_construct()
-        return super().model_construct(
-            **values,
-        )
-
-    # Track the directories that need to be created at start of workflow
     @computed_field  # type: ignore[prop-decorator]
     @property
     def log_dir(self) -> Path:
@@ -247,99 +267,275 @@ class Workflow(YamlModel):
 
     @computed_field  # type: ignore[prop-decorator]
     @property
-    def ifg_dir(self) -> Path:
-        return self.work_dir / "interferograms"
+    def dolphin_dir(self) -> Path:
+        return self.work_dir / "dolphin"
 
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def stitched_ifg_dir(self) -> Path:
-        return self.ifg_dir / "stitched"
+    # Buffer (deg) padded around `bbox` when deriving an implicit DEM / water-
+    # mask extent. The BurstSearch value is large enough to cover the full
+    # footprint of any IW burst (~20 x 85 km) regardless of where within the
+    # burst the study area sits; COMPASS geocoding needs DEM coverage for the
+    # whole burst, not just the crop area. All other sources consume the DEM
+    # only for water masking + tropo context, so the study area + a small
+    # buffer is plenty.
+    _DEM_BUFFER_DEG_BURST = 1.0
+    _DEM_BUFFER_DEG_DEFAULT = 0.25
 
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def unw_dir(self) -> Path:
-        return self.ifg_dir / "unwrapped"
-
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def scratch_dir(self) -> Path:
-        return self.work_dir / "scratch"
-
-    # Expanded version used for internal processing
-    @property
-    def _dem_bbox(self) -> Tuple[float, float, float, float]:
-        assert isinstance(self.bbox, tuple)
+    def _pad_bbox(
+        self, bbox: tuple[float, float, float, float], buf_deg: float
+    ) -> tuple[float, float, float, float]:
         return (
-            self.bbox[0] - 0.25,
-            self.bbox[1] - 0.25,
-            self.bbox[2] + 0.25,
-            self.bbox[3] + 0.25,
+            bbox[0] - buf_deg,
+            bbox[1] - buf_deg,
+            bbox[2] + buf_deg,
+            bbox[3] + buf_deg,
         )
 
-    # Intermediate outputs:
-    # From step 1:
-    def _get_existing_rslcs(self) -> list[Path]:
-        ext = ".SAFE" if self.asf_query.unzip else ".zip"
-        return sorted(self.asf_query.out_dir.glob("S*" + ext))
+    @property
+    def _dem_bbox(self) -> tuple[float, float, float, float]:
+        """Bbox passed to ``sardem`` when creating the DEM.
 
-    # From step 2:
-    def _get_existing_gslcs(self) -> list[Path]:
-        return sorted(self.gslc_dir.glob("t*/*/t*.h5"))
+        Priority: user-set ``dem_bbox`` > BurstSearch default (~1 deg buffer)
+        > everything-else default (~0.25 deg buffer). COMPASS needs DEM
+        coverage for the full IW burst extent, not just the study area, so
+        the BurstSearch buffer has to be big enough to absorb a whole burst.
+        """
+        if self.dem_bbox is not None:
+            return self.dem_bbox
+        assert self.bbox is not None
+        buf = (
+            self._DEM_BUFFER_DEG_BURST
+            if isinstance(self.search, BurstSearch)
+            else self._DEM_BUFFER_DEG_DEFAULT
+        )
+        return self._pad_bbox(self.bbox, buf)
 
-    def _get_burst_static_layers(self) -> list[Path]:
+    @property
+    def _water_mask_bbox(self) -> tuple[float, float, float, float]:
+        """Bbox passed to the ASF water-mask tile mosaic.
+
+        Always study-area-scoped: the water mask is only evaluated inside
+        the dolphin bounds, and oversizing it would just waste tile
+        downloads on the BurstSearch path (where ``_dem_bbox`` is large).
+        """
+        assert self.bbox is not None
+        return self._pad_bbox(self.bbox, self._DEM_BUFFER_DEG_DEFAULT)
+
+    # ------------------------------------------------------------------
+    # Persistence helpers
+    # ------------------------------------------------------------------
+
+    def save(self, config_file: Filename = "sweets_config.yaml") -> None:
+        """Save this configuration to a YAML file."""
+        logger.info(f"Saving config to {config_file}")
+        self.to_yaml(config_file)
+
+    @classmethod
+    def load(cls, config_file: Filename = "sweets_config.yaml") -> "Workflow":
+        """Load a configuration from a YAML file."""
+        logger.info(f"Loading config from {config_file}")
+        return cls.from_yaml(config_file)
+
+    # ------------------------------------------------------------------
+    # Step helpers
+    # ------------------------------------------------------------------
+
+    def _existing_safes(self) -> list[Path]:
+        # Only meaningful for the BurstSearch path; OperaCslcSearch doesn't
+        # produce SAFE directories.
+        assert isinstance(self.search, BurstSearch)
+        return self.search.existing_safes()
+
+    # COMPASS-written CSLC HDF5s are tens to hundreds of MB. A 6-KB shell is
+    # a leftover from a crashed run that wrote the attribute scaffolding but
+    # never the data — accepting those silently breaks dolphin downstream
+    # (issue #107). Treat anything below this size as not-yet-produced.
+    _MIN_VALID_GSLC_BYTES = 1 * 1024 * 1024
+
+    def _existing_gslcs(self) -> list[Path]:
+        """Return on-disk CSLCs for whichever source variant is selected.
+
+        - BurstSearch: COMPASS-written burst-organized HDF5s under gslc_dir.
+        - OperaCslcSearch: pre-made OPERA CSLCs under search.out_dir.
+        - NisarGslcSearch: pre-made NISAR GSLC HDF5s under search.out_dir.
+          Each candidate is opened to confirm it actually carries the
+          expected `/science/LSAR/GSLC/grids/frequency<X>` group — opera-
+          utils' subsetter writes a metadata-only stub when the requested
+          bbox doesn't intersect a product, and dolphin would crash on
+          those.
+        """
+        if isinstance(self.search, OperaCslcSearch):
+            return [
+                p
+                for p in self.search.existing_cslcs()
+                if p.stat().st_size >= self._MIN_VALID_GSLC_BYTES
+            ]
+        if isinstance(self.search, NisarGslcSearch):
+            # NisarGslcSearch.existing_files() returns the per-polarization
+            # VRT wrappers that sweets writes alongside each downloaded
+            # subset HDF5. The VRTs are tiny (~1 KB) so the MIN_VALID
+            # byte-count guard from the COMPASS path doesn't apply; instead,
+            # open each one through rasterio to confirm GDAL can see a real
+            # geotransform and CRS through the VRT -> HDF5 subdataset.
+            import rasterio
+
+            valid: list[Path] = []
+            for p in self.search.existing_files():
+                try:
+                    with rasterio.open(p) as src:
+                        assert not (src.transform.a == 1.0 and src.transform.e == 1.0)
+                        assert src.crs is not None
+                except Exception as e:
+                    logger.warning(f"Dropping {p.name}: not a valid raster ({e}).")
+                    continue
+                valid.append(p)
+            return valid
+        return [
+            p
+            for p in sorted(self.gslc_dir.glob("t*/*/t*.h5"))
+            if not p.name.startswith("static_")
+            and p.stat().st_size >= self._MIN_VALID_GSLC_BYTES
+        ]
+
+    def _existing_static_layers(self) -> list[Path]:
+        if isinstance(self.search, OperaCslcSearch):
+            return self.search.existing_static_layers()
+        # NisarGslcSearch has no separate static layers product — the caller
+        # is expected to skip the geometry-stitch step entirely.
+        if isinstance(self.search, NisarGslcSearch):
+            return []
         return sorted(self.gslc_dir.glob("t*/*/static_*.h5"))
 
-    # From step 3:
-    def _get_existing_burst_ifgs(self) -> list[Path]:
-        return sorted(self.ifg_dir.glob("t*/2*_2*.tif"))
+    def _gslc_root(self) -> Path:
+        """Return the directory we consider the 'root' of downloaded GSLCs.
 
-    # From step 4:
-    def _get_existing_stitched_ifgs(self) -> tuple[list[Path], list[Path]]:
-        ifg_file_list = sorted(Path(self.ifg_dir / "stitched").glob("2*.int"))
-        cor_file_list = [f.with_suffix(".cor") for f in ifg_file_list]
-        return ifg_file_list, cor_file_list
+        Used by `_apply_missing_data_filter` to compute relative paths
+        for files that get moved into the excluded-CSLCs debug folder.
+        """
+        if isinstance(self.search, (OperaCslcSearch, NisarGslcSearch)):
+            return self.search.out_dir
+        return self.gslc_dir
 
-    # Download helpers to kick off for step 1:
-    def _download_dem(self) -> Future:
-        """Kick off download/creation the DEM."""
-        return self._client.submit(create_dem, self.dem_filename, self._dem_bbox)
+    def _apply_missing_data_filter(self, gslc_files: list[Path]) -> list[Path]:
+        """Keep only the largest spatially-consistent (burst_id, date) subset.
 
-    def _download_burst_db(self) -> Future:
-        """Kick off download of burst database to get the GSLC bbox/EPSG."""
-        return self._client.submit(get_burst_db)
+        Runs `opera_utils.missing_data.get_missing_data_options` to
+        enumerate every (set of burst IDs, set of dates) subset where
+        *every* chosen burst has *every* chosen date. The top option
+        maximizes total bursts under that constraint — i.e. we keep the
+        widest stack where dolphin can form a coherent network without
+        spatial discontinuities from bursts-with-missing-dates.
 
-    def _download_water_mask(self) -> Future:
-        """Kick off download of water mask."""
-        return self._client.submit(
-            create_water_mask, self.water_mask_filename, self._dem_bbox
+        Files that aren't in the top option get moved (not deleted) to
+        `<work_dir>/excluded_cslcs/...` preserving their relative path
+        from the gslc root. That way a debugging user can pull them
+        back if they want the raw download.
+
+        NISAR GSLCs aren't burst-organized so this is a no-op for the
+        NisarGslcSearch source — its `_download_group` already handles
+        coverage selection via `_rank_signatures`.
+        """
+        if isinstance(self.search, NisarGslcSearch):
+            return gslc_files
+        if len(gslc_files) < 2:
+            return gslc_files
+
+        from opera_utils.missing_data import (
+            get_missing_data_options,
+            print_with_rich,
         )
 
-    def _download_rslcs(self) -> list[Path]:
-        """Download Sentinel zip files from ASF."""
-        self.log_dir.mkdir(parents=True, exist_ok=True)
-        # The final name will depend on if we're unzipping or not
-        existing_files = self._get_existing_rslcs()
-
-        if existing_files and self.skip_download_if_exists:
-            logger.info(
-                f"Found {len(existing_files)} existing files in"
-                f" {self.asf_query.out_dir}. Skipping download."
+        try:
+            options = get_missing_data_options(
+                slc_files=[str(p) for p in gslc_files],
             )
-            return existing_files
+        except Exception as e:
+            logger.warning(
+                f"get_missing_data_options failed ({e}); skipping"
+                " missing-data filter."
+            )
+            return gslc_files
+        if not options:
+            logger.warning("No missing-data options returned; skipping filter.")
+            return gslc_files
 
-        # If we didn't have any, we need to download them
-        # TODO: how should we handle partial/failed downloads... do we really
-        # want to re-search for them each time?
-        # Maybe there can be a "force" flag to re-download everything?
-        # or perhaps an API search, then if the number matches, we can skip
-        # rather than let aria2c start and do the checksums
-        return self.asf_query.download(log_dir=self.log_dir)
+        top = options[0]
+        if top.num_candidate_bursts == top.total_num_bursts:
+            logger.info(
+                f"Missing-data filter: all {top.total_num_bursts} CSLCs form a"
+                f" complete {top.num_burst_ids}-burst x {top.num_dates}-date"
+                " stack; nothing to exclude."
+            )
+            return gslc_files
+
+        logger.info(f"Missing-data filter: {len(options)} consistent subset option(s).")
+        print_with_rich(options, use_stderr=False)
+        logger.info(
+            f"Keeping option #1: {top.num_burst_ids} burst(s) x"
+            f" {top.num_dates} date(s) = {top.total_num_bursts} CSLCs"
+            f" (excluding {top.num_candidate_bursts - top.total_num_bursts}"
+            " partial-coverage CSLCs)."
+        )
+
+        kept_set = {Path(p) for p in top.inputs}
+        to_exclude = [p for p in gslc_files if p not in kept_set]
+
+        root = self._gslc_root().resolve()
+        excluded_dir = (self.work_dir / "excluded_cslcs").resolve()
+        for f in to_exclude:
+            src = f.resolve()
+            try:
+                rel = src.relative_to(root)
+            except ValueError:
+                rel = Path(src.name)
+            dst = excluded_dir / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            logger.warning(f"Excluding {rel} -> excluded_cslcs/{rel}")
+            shutil.move(str(src), str(dst))
+
+        return sorted(kept_set)
 
     @log_runtime
-    def _geocode_slcs(self, slc_files, dem_file, burst_db_file):
+    def _download(self) -> list[Path]:
+        if isinstance(self.search, OperaCslcSearch):
+            existing = self.search.existing_cslcs()
+            if existing and not self.overwrite:
+                logger.info(
+                    f"Found {len(existing)} existing OPERA CSLCs in"
+                    f" {self.search.out_dir}; skipping ASF download."
+                )
+            else:
+                self.search.download()
+            # Always make sure static layers are present too.
+            if not self.search.existing_static_layers() or self.overwrite:
+                self.search.download_static_layers()
+            return self.search.existing_cslcs()
+
+        if isinstance(self.search, NisarGslcSearch):
+            existing = self.search.existing_files()
+            if existing and not self.overwrite:
+                logger.info(
+                    f"Found {len(existing)} existing NISAR GSLCs in"
+                    f" {self.search.out_dir}; skipping CMR download."
+                )
+                return existing
+            return self.search.download()
+
+        existing = self._existing_safes()
+        if existing and not self.overwrite:
+            logger.info(
+                f"Found {len(existing)} existing SAFE dirs in"
+                f" {self.search.out_dir}; skipping burst2safe download."
+            )
+            return existing
+        return self.search.download()
+
+    @log_runtime
+    def _geocode_slcs(
+        self, safes: list[Path], dem_file: Path, burst_db_file: Path
+    ) -> tuple[list[Path], list[Path]]:
         self.log_dir.mkdir(parents=True, exist_ok=True)
         compass_cfg_files = create_config_files(
-            slc_dir=slc_files[0].parent,
+            slc_dir=safes[0].parent,
             burst_db_file=burst_db_file,
             dem_file=dem_file,
             orbit_dir=self.orbit_dir,
@@ -349,245 +545,278 @@ class Workflow(YamlModel):
             pol_type=self.pol_type,
             out_dir=self.gslc_dir,
             overwrite=self.overwrite,
-            using_zipped=not self.asf_query.unzip,
+            using_zipped=False,
         )
 
-        def cfg_to_filename(cfg_path: Path) -> str:
-            # Convert the YAML filename to a .h5 filename with date switched
-            # geo_runconfig_20221029_t078_165578_iw3.yaml -> t078_165578_iw2_20221029.h5
-            date = cfg_path.name.split("_")[2]
-            burst = "_".join(cfg_path.stem.split("_")[3:])
-            return f"{burst}_{date}.h5"
-
-        # Check which ones we have without submitting a future
-        all_gslc_files = []
-        todo_gslc = []
-        existing_paths = self._get_existing_gslcs()
-        name_to_paths = {p.name: p for p in existing_paths}
-        logger.info(f"Found {len(name_to_paths)} existing GSLC files")
-        for cfg_file in compass_cfg_files:
-            name = cfg_to_filename(cfg_file)
-            if name in name_to_paths:
-                all_gslc_files.append(name_to_paths[name])
+        existing = {p.name: p for p in self._existing_gslcs()}
+        logger.info(f"Found {len(existing)} existing GSLCs")
+        gslc_files: list[Path] = []
+        todo: list[Path] = []
+        for cfg in compass_cfg_files:
+            name = _cfg_to_filename(cfg)
+            if name in existing:
+                gslc_files.append(existing[name])
             else:
-                # Run the geocoding if we dont have it already
-                todo_gslc.append(cfg_file)
+                todo.append(cfg)
 
-        run_func = partial(run_geocode, log_dir=self.log_dir)
-        with ProcessPoolExecutor(max_workers=self.n_workers) as _client:
-            new_files = _client.map(run_func, todo_gslc)
+        if todo:
+            run = partial(run_geocode, log_dir=self.log_dir)
+            with ProcessPoolExecutor(max_workers=self.n_workers) as pool:
+                gslc_files.extend(pool.map(run, todo))
 
-        new_files = list(new_files)
-        all_gslc_files.extend(new_files)
-
-        # Get the first config file (by date) for each of the bursts.
-        # We only need to create the static layers once per burst
-        def cfg_to_static_filename(cfg_path: Path) -> str:
-            # Convert the YAML filename to a .h5 filename with date switched
-            # geo_runconfig_20221029_t078_165578_iw3.yaml -> t078_165578_iw2_20221029.h5
-            burst = "_".join(cfg_path.stem.split("_")[3:])
-            return f"static_layers_{burst}.h5"
-
-        existing_static_paths = self._get_burst_static_layers()
-        name_to_paths = {p.name: p for p in existing_static_paths}
-        logger.info(f"Found {len(name_to_paths)} existing geometry files")
-        day1_cfg_paths = [
-            paths[0] for paths in group_by_burst(compass_cfg_files).values()
+        # Static layers (one per burst, not per date)
+        static_existing = {p.name: p for p in self._existing_static_layers()}
+        first_per_burst = [
+            cfgs[0] for cfgs in group_by_burst(compass_cfg_files).values()
         ]
-        static_files = []
-        todo_static = []
-        for cfg_file in day1_cfg_paths:
-            name = cfg_to_static_filename(cfg_file)
-            if name in name_to_paths:
-                static_files.append(name_to_paths[name])
+        static_files: list[Path] = []
+        static_todo: list[Path] = []
+        for cfg in first_per_burst:
+            name = _cfg_to_static_filename(cfg)
+            if name in static_existing:
+                static_files.append(static_existing[name])
             else:
-                # Run the geocoding if we dont have it already
-                todo_static.append(cfg_file)
-        run_func = partial(run_static_layers, log_dir=self.log_dir)
-        with ProcessPoolExecutor(max_workers=self.n_workers) as _client:
-            new_files = _client.map(run_func, todo_static)
+                static_todo.append(cfg)
+
+        if static_todo:
+            run_sl = partial(run_static_layers, log_dir=self.log_dir)
+            with ProcessPoolExecutor(max_workers=self.n_workers) as pool:
+                static_files.extend(pool.map(run_sl, static_todo))
+
+        return sorted(gslc_files), sorted(static_files)
 
     @log_runtime
-    def _stitch_geometry(self, geom_path_list):
+    def _stitch_geometry(self, static_files: list[Path]) -> list[Path]:
+        from dolphin._types import Bbox
+
+        bbox = Bbox(*self.bbox) if self.bbox is not None else None
         return stitch_geometry(
-            geom_path_list=geom_path_list,
+            geom_path_list=[Path(p) for p in static_files],
             geom_dir=self.geom_dir,
             dem_filename=self.dem_filename,
-            looks=self.interferogram_options.looks,
-            bbox=self.bbox,
+            looks=self.dolphin.strides,
+            bbox=bbox,
             overwrite=self.overwrite,
         )
 
-    @staticmethod
-    def _get_subdataset(f):
-        if not (str(f).endswith(".h5") or str(f).endswith(".nc")):
-            return ""
-        with h5py.File(f) as hf:
-            for pol_str in ["VV", "HV", "VH", "HH"]:
-                dset = f"/data/{pol_str}"
-                if dset in hf:
-                    return dset
+    def _dolphin_subdataset(self) -> str:
+        """Pick the right HDF5 subdataset path for the current source.
+
+        - COMPASS / OPERA CSLCs are HDF5 files; dolphin reads them via
+          ``input_options.subdataset = /data/VV``.
+        - NISAR GSLCs are wrapped by sweets in per-polarization VRTs
+          that inject georeferencing on top of the raw HDF5 subdataset;
+          dolphin opens the VRTs as plain rasters and ignores
+          ``subdataset``, so any placeholder string works.
+        """
+        if isinstance(self.search, NisarGslcSearch):
+            return "/unused-for-raster-inputs"
+        return "/data/VV"
+
+    def _dolphin_wavelength(self) -> Optional[float]:
+        """Wavelength override for dolphin, or None to let dolphin auto-detect.
+
+        For the NISAR source, sweets reads the precise carrier from the
+        HDF5's ``centerFrequency`` dataset when available; this is
+        richer than dolphin's own filename-based fallback (which can
+        only tell L-band from S-band). dolphin's filename parser can't
+        see through sweets' VRT wrappers anyway, so sweets must be the
+        one peeking the HDF5. For every other source, return None and
+        let dolphin's `model_post_init` handle it.
+        """
+        if isinstance(self.search, NisarGslcSearch):
+            return self.search.wavelength()
+        return None
 
     @log_runtime
-    def _create_burst_interferograms(self, gslc_files):
-        # Group the SLCs by burst:
-        # {'t078_165573_iw2': [PosixPath('gslcs/t078_165573_iw2/20221029/...], 't078_...
-        burst_to_gslc = group_by_burst(gslc_files)
-        burst_to_ifg = group_by_burst(self._get_existing_burst_ifgs())
-        ifg_path_list = []
-        for burst, gslc_files in burst_to_gslc.items():
-            subdatasets = [self._get_subdataset(f) for f in gslc_files]
-            outdir = self.ifg_dir / burst
-            outdir.mkdir(parents=True, exist_ok=True)
-            network = Network(
-                gslc_files,
-                outdir=outdir,
-                max_temporal_baseline=self.interferogram_options.max_temporal_baseline,
-                max_bandwidth=self.interferogram_options.max_bandwidth,
-                subdataset=subdatasets,
-                write=False,
-            )
-            logger.info(
-                f"{len(network)} interferograms to create for burst {burst} in {outdir}"
-            )
-            cur_existing = burst_to_ifg.get(burst, [])
-            logger.info(f"{len(cur_existing)} existing interferograms")
-            if len(network) == len(cur_existing):
-                ifg_path_list.extend(cur_existing)
-            else:
-                ifg_futures = []
-                with ThreadPoolExecutor(max_workers=self.n_workers) as _client:
-                    for vrt_ifg in network.ifg_list:
-                        outfile = vrt_ifg.path.with_suffix(".tif")
-                        ifg_fut = _client.submit(
-                            create_ifg,
-                            vrt_ifg.ref_slc,
-                            vrt_ifg.sec_slc,
-                            outfile,
-                            looks=self.interferogram_options.looks,
-                        )
-
-                        ifg_futures.append(ifg_fut)
-
-                    for fut in ifg_futures:
-                        ifg_path_list.append(fut.result())
-
-        return ifg_path_list
-
-    @log_runtime
-    def _stitch_interferograms(self, ifg_path_list):
-        self.stitched_ifg_dir.mkdir(parents=True, exist_ok=True)
-        grouped_images = group_by_date(ifg_path_list)
-        stitched_ifg_files = []
-        for dates, cur_images in grouped_images.items():
-            logger.info(f"{dates}: Stitching {len(cur_images)} images.")
-            outfile = self.stitched_ifg_dir / (_format_date_pair(*dates) + ".int")
-            stitched_ifg_files.append(outfile)
-
-            stitching.merge_images(
-                cur_images,
-                outfile=outfile,
-                driver="ENVI",
-                out_bounds=self.bbox,
-                out_bounds_epsg=4326,
-                target_aligned_pixels=True,
-                overwrite=self.overwrite,
-            )
-
-        # Also need to write out a temp correlation file for unwrapping
-        with ProcessPoolExecutor(max_workers=self.n_workers) as _client:
-            cor_files = list(_client.map(create_cor, stitched_ifg_files))
-
-        return stitched_ifg_files, cor_files
-
-    def _unwrap_ifgs(self, ifg_files, cor_files):
-        unwrapped_files = []
-        if not self.do_unwrap:
-            logger.info("Skipping unwrapping")
-            return unwrapped_files
-
-        self.unw_dir.mkdir(parents=True, exist_ok=True)
-        self.scratch_dir.mkdir(parents=True, exist_ok=True)
-        # Warp the water mask to match the interferogram
-        self._warped_water_mask = self.work_dir / "warped_mask.tif"
-        if self._warped_water_mask.exists():
-            logger.info(f"Mask already exists at {self._warped_water_mask}")
-        else:
-            stitching.warp_to_match(
-                input_file=self.water_mask_filename,
-                match_file=ifg_files[0],
-                output_file=self._warped_water_mask,
-            )
-
-        # dolphin allows for parallel jobs, use PorcessPool here?
-        unw_paths, _ = unwrap.run(
-            ifg_files,
-            cor_files,
-            self.unw_dir,
-            unwrap_options=self.unwrap_options,
-            nlooks=int(np.prod(self.interferogram_options.looks)),
-            mask_filename=self._warped_water_mask,
-            overwrite=self.overwrite,
-            scratchdir=self.scratch_dir,
-            delete_intermediate=False,
+    def _run_dolphin(self, gslc_files: list[Path]) -> "OutputPaths":
+        mask = self.water_mask_filename if self.water_mask_filename.exists() else None
+        return run_displacement(
+            cslc_files=gslc_files,
+            work_directory=self.dolphin_dir,
+            options=self.dolphin,
+            mask_file=mask,
+            bounds=self.bbox,
+            config_yaml=self.work_dir / "dolphin_config.yaml",
+            subdataset=self._dolphin_subdataset(),
+            wavelength=self._dolphin_wavelength(),
         )
-        # TODO: Maybe check the return codes here? or log the snaphu output?
-        return unw_paths
+
+    # ------------------------------------------------------------------
+    # Top-level run
+    # ------------------------------------------------------------------
 
     @log_runtime
-    def run(self, starting_step: int = 1):
-        """Run the workflow."""
+    def run(self, starting_step: int = 1) -> "OutputPaths":
+        """Run the full workflow.
+
+        Parameters
+        ----------
+        starting_step : int
+            Skip earlier stages if intermediate outputs are already on disk.
+            ``1`` = download, ``2`` = geocode (BurstSearch only, OPERA path
+            stitches geometry directly), ``3`` = dolphin.
+
+        Returns
+        -------
+        dolphin.workflows.displacement.OutputPaths
+            Output paths produced by dolphin.
+
+        """
         setup_nasa_netrc()
         set_num_threads(self.threads_per_worker)
+        self.work_dir.mkdir(parents=True, exist_ok=True)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
 
-        # First step: data download
-        logger.info(f"Setting up {self.n_workers} workers for ThreadPoolExecutor")
+        is_safe = isinstance(self.search, BurstSearch)
+        is_nisar = isinstance(self.search, NisarGslcSearch)
+        # COMPASS is only needed for the raw-SAFE path. OPERA and NISAR both
+        # deliver pre-geocoded HDF5s.
+        needs_compass = is_safe
+
+        # ---- Step 1: download (DEM, water mask, burst DB, source SLCs) ----
         if starting_step <= 1:
-            with ThreadPoolExecutor(max_workers=self.n_workers) as _client:
-                # TODO: fix this odd workaround once the isce3 hanging issues
-                # are being resolved
-                self._client = _client
-
-                dem_fut = self._download_dem()
-                burst_db_fut = self._download_burst_db()
-                water_mask_future = self._download_water_mask()
-                # Gather the futures once everything is downloaded
-                burst_db_file = burst_db_fut.result()
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                dem_fut = pool.submit(create_dem, self.dem_filename, self._dem_bbox)
+                mask_fut = pool.submit(
+                    create_water_mask,
+                    self.water_mask_filename,
+                    self._water_mask_bbox,
+                )
+                # burst-db is only needed by COMPASS.
+                burst_db_fut = pool.submit(get_burst_db) if needs_compass else None
+                futures: list = [dem_fut, mask_fut]
+                if burst_db_fut is not None:
+                    futures.append(burst_db_fut)
+                wait(futures)
                 dem_fut.result()
-                wait([water_mask_future])
+                mask_fut.result()
+                burst_db_file = burst_db_fut.result() if burst_db_fut else None
+            self._download()
+        else:
+            burst_db_file = get_burst_db() if needs_compass else None
 
-            rslc_files = self._download_rslcs()
-
-        # Second step:
+        # ---- Step 2: produce CSLCs + stitch geometry ----
         if starting_step <= 2:
-            burst_db_file = get_burst_db()
-            download_orbits(self.asf_query.out_dir, self.orbit_dir)
-            rslc_files = self._get_existing_rslcs()
-            self._geocode_slcs(rslc_files, self.dem_filename, burst_db_file)
+            if isinstance(self.search, NisarGslcSearch):
+                # NISAR GSLCs are already geocoded and carry their own
+                # per-frame metadata; there's no static-layers product to
+                # stitch, and dolphin reads the grid from the HDF5 itself.
+                logger.info(
+                    "NISAR source: skipping COMPASS and geometry stitching;"
+                    " dolphin will read the grid from the GSLC HDF5s."
+                )
+            elif isinstance(self.search, OperaCslcSearch):
+                # OPERA path: pre-made CSLCs, just stitch the static layers.
+                static_files = self._existing_static_layers()
+                if not static_files:
+                    msg = (
+                        f"No CSLC-STATIC layers found in"
+                        f" {self.search.static_layers_dir!s}; cannot stitch geometry."
+                    )
+                    raise RuntimeError(msg)
+                self._stitch_geometry(static_files)
+            else:
+                safes = self._existing_safes()
+                if not safes:
+                    msg = (
+                        f"No SAFE directories found in {self.search.out_dir};"
+                        " cannot geocode."
+                    )
+                    raise RuntimeError(msg)
+                download_orbits(self.search.out_dir, self.orbit_dir)
+                assert burst_db_file is not None
+                _, static_files = self._geocode_slcs(
+                    safes, self.dem_filename, burst_db_file
+                )
+                self._stitch_geometry(static_files)
 
-            geom_path_list = self._get_burst_static_layers()
-            logger.info(f"Found {len(geom_path_list)} burst static layers")
-            self._stitch_geometry(geom_path_list)
-
-        if starting_step <= 3:
-            gslc_files = self._get_existing_gslcs()
-            logger.info(
-                f"Found {len(gslc_files)} existing GSLC files in {self.gslc_dir}"
+        # ---- Step 3: dolphin ----
+        # Always re-collect GSLCs from disk before dolphin so a starting_step=3
+        # run still finds them.
+        gslc_files = self._existing_gslcs()
+        logger.info(f"Found {len(gslc_files)} GSLC files for dolphin")
+        if not gslc_files:
+            where = (
+                self.search.out_dir
+                if (is_nisar or isinstance(self.search, OperaCslcSearch))
+                else self.gslc_dir
             )
-            self._create_burst_interferograms(gslc_files)
+            msg = f"No GSLCs found in {where}; cannot run dolphin."
+            raise RuntimeError(msg)
 
-        if starting_step <= 4:
-            logger.info(f"Searching for existing burst ifgs in {self.ifg_dir}")
-            ifg_path_list = self._get_existing_burst_ifgs()
-            logger.info(f"Found {len(ifg_path_list)} burst ifgs")
+        # Trim the stack to the largest spatially-consistent (burst,
+        # date) subset — any burst missing one or more of the chosen
+        # dates gets moved out to `excluded_cslcs/`. Keeps dolphin from
+        # forming a network across partially-covered bursts (which
+        # produces spatial discontinuities in the displacement field)
+        # and from crashing on 1-SLC per-burst stacks like the one
+        # that bit the BurstSearch path with a burst-boundary AOI.
+        gslc_files = self._apply_missing_data_filter(gslc_files)
 
-            self._stitch_interferograms(ifg_path_list)
+        if len(gslc_files) < 2:
+            msg = (
+                f"Only 1 usable GSLC survived for dolphin ({gslc_files[0].name});"
+                " need at least 2 to form an interferogram. Widen the date"
+                " range, pick a different track/frame, or drop the"
+                " `frequency` / `polarizations` pins so sweets can auto-"
+                "select whichever signature actually has a coherent stack."
+            )
+            raise RuntimeError(msg)
+        out_paths = self._run_dolphin(gslc_files)
 
-        stitched_ifg_files, cor_files = self._get_existing_stitched_ifgs()
-        logger.info(f"Found {len(stitched_ifg_files)} stitched ifgs")
+        # ---- Optional post-step: tropospheric correction ----
+        if self.tropo.enabled:
+            if isinstance(self.search, NisarGslcSearch):
+                logger.warning(
+                    "Tropo correction is not supported with the NISAR GSLC"
+                    " source yet (no stitched incidence angle raster is"
+                    " produced for NISAR). Skipping."
+                )
+            else:
+                self._run_tropo(gslc_files, out_paths)
 
-        # make sure we have the water mask
-        create_water_mask(self.water_mask_filename, self._dem_bbox)
-        unwrapped_files = self._unwrap_ifgs(stitched_ifg_files, cor_files)
+        return out_paths
 
-        return unwrapped_files
+    @log_runtime
+    def _run_tropo(
+        self, gslc_files: list[Path], out_paths: "OutputPaths"
+    ) -> list[Path]:
+        """Apply OPERA L4 TROPO-ZENITH corrections to dolphin's outputs.
+
+        The new `run_tropo_correction` reaches into `dolphin_dir/unwrapped/`
+        and `dolphin_dir/timeseries/` itself, correcting both the unwrapped
+        interferograms and the per-pair timeseries rasters in one shot.
+        """
+        del out_paths  # glob from disk — survives starting_step=3 reruns
+        incidence_path = self.geom_dir / "local_incidence_angle.tif"
+        if not incidence_path.exists():
+            msg = (
+                f"Tropo correction needs the stitched local_incidence_angle"
+                f" raster at {incidence_path}; rerun starting_step=2 first."
+            )
+            raise RuntimeError(msg)
+        return run_tropo_correction(
+            slc_files=gslc_files,
+            dem_path=self.dem_filename,
+            incidence_angle_path=incidence_path,
+            dolphin_work_dir=self.dolphin_dir,
+            options=self.tropo,
+        )
+
+
+def _cfg_to_filename(cfg_path: Path) -> str:
+    """COMPASS runconfig path -> expected GSLC HDF5 filename.
+
+    e.g. ``geo_runconfig_20221029_t078_165578_iw3.yaml``
+        -> ``t078_165578_iw3_20221029.h5``
+    """
+    date = cfg_path.name.split("_")[2]
+    burst = "_".join(cfg_path.stem.split("_")[3:])
+    return f"{burst}_{date}.h5"
+
+
+def _cfg_to_static_filename(cfg_path: Path) -> str:
+    """COMPASS runconfig path -> expected static-layers HDF5 filename."""
+    burst = "_".join(cfg_path.stem.split("_")[3:])
+    return f"static_layers_{burst}.h5"

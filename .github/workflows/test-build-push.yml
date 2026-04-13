@@ -15,41 +15,22 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-14]
-
       fail-fast: true
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        shell: bash -l {0}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup environment
-        uses: mamba-org/setup-micromamba@v2
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
         with:
-          environment-file: conda-env.yml
-          environment-name: sweets-env
-          # persist on the same day.
-          cache-environment-key: environment-${{ steps.date.outputs.date }}
-          cache-downloads-key: downloads-${{ steps.date.outputs.date }}
-          generate-run-shell: false
-          # create-args: ${{ matrix.deps.spec }}
-          condarc: |
-            channels:
-              - conda-forge
-      - name: Install
-        run: |
-          python -m pip install --no-deps .
-      - name: Install test dependencies
-        run: |
-          micromamba install -f tests/requirements.txt -c conda-forge
+          environments: test
+          cache: true
       - name: Enable numba boundscheck for better error catching
         run: |
           echo "NUMBA_BOUNDSCHECK=1" >> $GITHUB_ENV
           echo "TQDM_DISABLE=1" >> $GITHUB_ENV
-      - name: Test (with numba boundscheck on)
-        run: |
-          pytest -n0 -vv
+      - name: Test
+        run: pixi run -e test pytest -n0 -vv
 
 
   dockerize: # Based on Mintpy: https://github.com/insarlab/MintPy/blob/5ca554fef324b816f9130feec567e2cf463e41d2/.github/workflows/build-n-publish-to-pypi.yml
@@ -83,7 +64,7 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: ./docker/Dockerfile
+          file: Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ghcr.io/${{ github.repository }}:${{ env.SWEETS_VERSION }}

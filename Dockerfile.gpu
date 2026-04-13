@@ -1,0 +1,157 @@
+# syntax=docker/dockerfile:1
+# check=skip=FromPlatformFlagConstDisallowed
+# Multi-stage GPU Dockerfile for sweets.
+# Builds for linux/amd64 only, requires NVIDIA GPU + nvidia-container-toolkit at runtime.
+#
+# Build (conda isce3-cuda, default):
+#   docker build -f Dockerfile.gpu -t sweets:gpu .
+#
+# Build (isce3 from source with CUDA):
+#   docker build -f Dockerfile.gpu --build-arg BUILD_ISCE3_FROM_SOURCE=true -t sweets:gpu .
+#
+# Run (requires nvidia-container-toolkit on the host):
+#   docker run --gpus all --rm -v $PWD:/work sweets:gpu sweets run sweets_config.yaml
+#
+# CUDA version notes:
+#   CUDA_VERSION     -- tag for the nvidia/cuda base image (e.g. 12.6.3).
+#   CUDA_MAJOR_MINOR -- fed to CONDA_OVERRIDE_CUDA so pixi pulls conda
+#                        packages built for that CUDA generation (e.g. 12.6).
+#   Both must be <= the version your host driver supports.
+#   Check with: nvidia-smi (look for "CUDA Version" in the header).
+
+# These ARGs are declared before the first FROM so they can be used in
+# FROM instructions and re-declared in later stages as needed.
+ARG CUDA_VERSION=12.6.3
+ARG CUDA_MAJOR_MINOR=12.6
+
+# ---------------------------------------------------------------------------
+# Stage 1: Install dependencies using pixi
+# Uses CUDA devel image so nvcc is available if building isce3 from source.
+# The devel image is only used during build, not shipped.
+# ---------------------------------------------------------------------------
+FROM --platform=linux/amd64 nvidia/cuda:${CUDA_VERSION}-devel-ubuntu24.04 AS install
+
+# Install pixi + git/ca-certificates (needed for pip git+ dependencies)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl git \
+    && curl -fsSL https://pixi.sh/install.sh | PIXI_VERSION=v0.65.0 bash \
+    && rm -rf /var/lib/apt/lists/*
+ENV PATH="/root/.pixi/bin:${PATH}"
+
+WORKDIR /app
+
+# Set version for setuptools-scm (since .git is excluded from build context)
+ARG VERSION=0.0.0.dev0
+# Package-scoped form so we only pin sweets' own version; the unscoped
+# SETUPTOOLS_SCM_PRETEND_VERSION would leak into every setuptools_scm build
+# in this layer (including uv's git builds of dolphin / opera-utils forks),
+# stamping them all as 0.0.0.dev0 and breaking version constraints.
+ENV SETUPTOOLS_SCM_PRETEND_VERSION_FOR_SWEETS=${VERSION}
+
+# Tell the conda solver which CUDA generation is available.
+# No physical GPU is needed at build time -- this just lets pixi resolve
+# packages that depend on the __cuda virtual package.
+# Using major.minor (not just "12") ensures the solver does not pull packages
+# built for a newer CUDA than your driver supports.
+ARG CUDA_MAJOR_MINOR
+ENV CONDA_OVERRIDE_CUDA=${CUDA_MAJOR_MINOR}
+
+# Copy only dependency files first (for layer caching)
+COPY pyproject.toml pixi.lock LICENSE README.md ./
+
+# Pin cuda-version so the solver picks isce3-cuda built for this CUDA generation.
+# Without this, the solver grabs the newest build (e.g. cuda129) regardless of
+# CONDA_OVERRIDE_CUDA, because isce3's run constraint is only __cuda >= 12.
+RUN sed -i '/^isce3-cuda/a cuda-version = "'"${CUDA_MAJOR_MINOR}"'.*"' pyproject.toml
+
+# Create minimal source structure so setuptools metadata resolves
+RUN mkdir -p src/sweets && touch src/sweets/__init__.py
+
+# Re-lock so pixi.lock reflects the cuda-version pin added above.
+# Without this, the existing lockfile still resolves the newest CUDA packages.
+RUN pixi lock -e gpu
+
+# Install GPU environment (isce3-cuda)
+RUN --mount=type=cache,target=/root/.cache/rattler/cache,sharing=private \
+    pixi install -e gpu
+
+# ---------------------------------------------------------------------------
+# Stage 2: Build the package
+# ---------------------------------------------------------------------------
+FROM install AS build
+
+ARG VERSION=0.0.0.dev0
+# Package-scoped form so we only pin sweets' own version; the unscoped
+# SETUPTOOLS_SCM_PRETEND_VERSION would leak into every setuptools_scm build
+# in this layer (including uv's git builds of dolphin / opera-utils forks),
+# stamping them all as 0.0.0.dev0 and breaking version constraints.
+ENV SETUPTOOLS_SCM_PRETEND_VERSION_FOR_SWEETS=${VERSION}
+
+# Copy the full source code
+COPY . .
+
+# Reinstall with real source to get the actual package installed
+RUN --mount=type=cache,target=/root/.cache/rattler/cache,sharing=private \
+    pixi install -e gpu
+
+# Build isce3 from source to work around conda-forge linux-64 resamp() SIGSEGV.
+# Opt-in via --build-arg BUILD_ISCE3_FROM_SOURCE=true.
+ARG ISCE3_REPO=https://github.com/scottstanie/isce3.git
+ARG ISCE3_BRANCH=scott-develop
+ARG BUILD_ISCE3_FROM_SOURCE=false
+RUN if [ "$BUILD_ISCE3_FROM_SOURCE" = "true" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends \
+        g++ cmake ninja-build pkg-config && \
+      rm -rf /var/lib/apt/lists/* && \
+      git clone --branch ${ISCE3_BRANCH} --depth 1 ${ISCE3_REPO} /isce3 && \
+      cmake -B /isce3/build -S /isce3 -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/app/.pixi/envs/gpu \
+        -DCMAKE_PREFIX_PATH="/app/.pixi/envs/gpu;/usr/local/cuda" \
+        -DCMAKE_CXX_FLAGS="-include cstdint" \
+        -DWITH_CUDA=YES && \
+      cmake --build /isce3/build --parallel $(nproc) && \
+      cmake --build /isce3/build --target install && \
+      rm -rf /isce3; \
+    fi
+
+# Create activation script using pixi shell-hook
+RUN pixi shell-hook -e gpu > /activate.sh && \
+    chmod +x /activate.sh
+
+# ---------------------------------------------------------------------------
+# Stage 3: Production image with NVIDIA CUDA runtime
+# ---------------------------------------------------------------------------
+# Using the CUDA *runtime* image (not devel) -- smaller footprint, includes
+# the shared libraries that isce3-cuda needs at runtime.
+ARG CUDA_VERSION
+FROM --platform=linux/amd64 nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04 AS production
+
+LABEL org.opencontainers.image.description="Container for sweets InSAR workflows (GPU)"
+LABEL org.opencontainers.image.authors="Scott Staniewicz <scott.j.staniewicz@jpl.nasa.gov>"
+LABEL org.opencontainers.image.url="https://github.com/isce-framework/sweets"
+LABEL org.opencontainers.image.source="https://github.com/isce-framework/sweets"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause OR Apache-2.0"
+
+# Minimal runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the GPU environment and source from build stage
+COPY --from=build /app/.pixi/envs/gpu /app/.pixi/envs/gpu
+COPY --from=build /app/src /app/src
+COPY --from=build /activate.sh /activate.sh
+
+WORKDIR /work
+ENV HOME=/work
+
+# Entrypoint activates the pixi environment so `sweets` is on PATH
+RUN printf '#!/bin/bash\nset -e\nsource /activate.sh\nexec "$@"\n' > /entrypoint.sh && \
+    chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+# Default command runs `sweets --help`; override with your own command, e.g.
+#   docker run --gpus all --rm -v $PWD:/work sweets:gpu sweets run sweets_config.yaml
+CMD ["sweets", "--help"]

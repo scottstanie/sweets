@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using these metadata."
+title: "sweets: Workflows for generating surface displacement maps using InSAR"
+type: software
+authors:
+  - family-names: Staniewicz
+    given-names: Scott J.
+    orcid: https://orcid.org/0000-0002-3055-5731
+    affiliation: Jet Propulsion Laboratory, California Institute of Technology
+  - family-names: Havazli
+    given-names: Emre
+    orcid: https://orcid.org/0000-0002-1236-7067
+    affiliation: Jet Propulsion Laboratory, California Institute of Technology
+  - family-names: Langemeijer
+    given-names: Jaap
+  - family-names: Dhar
+    given-names: Tisham
+repository-code: "https://github.com/isce-framework/sweets"
+abstract: "sweets is an end-to-end workflow for generating surface displacement time series from Sentinel-1 and NISAR data, wrapping burst download, COMPASS/isce3 geocoded SLC generation, and the dolphin PS/DS InSAR processor."
+keywords:
+  - InSAR
+  - Sentinel-1
+  - NISAR
+  - surface displacement
+  - time series
+  - remote sensing
+license: "BSD-3-Clause OR Apache-2.0"

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -13,39 +12,17 @@ from shapely import geometry, wkt
 from ._types import Filename
 
 
-def get_cache_dir(force_posix: bool = False) -> Path:
-    """Return the config folder for the application.
+def get_cache_dir() -> Path:
+    """Return the per-user cache directory used for downloaded artifacts.
 
-    Source:
-    https://github.com/pallets/click/blob/a63679e77f9be2eb99e2f0884d617f9635a485e2/src/click/utils.py#L408
-
-    The following folders could be returned:
-    Mac OS X:
-      ``~/Library/Application Support/sweets``
-    Mac OS X (POSIX):
-      ``~/.sweets``
-    Unix:
-      ``~/.cache/sweets``
-    Unix (POSIX):
-      ``~/.sweets``
-
-    Parameters
-    ----------
-    force_posix : bool
-        If this is set to `True` then on any POSIX system the
-        folder will be stored in the home folder with a leading
-        dot instead of the XDG config home or darwin's
-        application support folder.
-
+    Resolved to ``$XDG_CACHE_HOME/sweets`` (or ``~/.cache/sweets`` if unset)
+    on every platform — explicitly *not* macOS's ``~/Library/Application
+    Support/sweets`` because the space in ``Application Support`` trips
+    upstream sardem's ``unzip_cmd.split(" ")`` water-mask download path.
     """
     app_name = "sweets"
-    if force_posix:
-        path = Path("~/.sweets") / app_name
-    elif sys.platform == "darwin":
-        path = Path("~/Library/Application Support") / app_name
-    else:
-        path = Path(os.environ.get("XDG_CONFIG_HOME", "~/.cache")) / app_name
-    path = path.expanduser()
+    base = os.environ.get("XDG_CACHE_HOME", "~/.cache")
+    path = Path(base).expanduser() / app_name
     path.mkdir(parents=True, exist_ok=True)
     return path
 

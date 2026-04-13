@@ -2,10 +2,7 @@ from pathlib import Path
 from typing import List
 
 from eof import download
-
-from ._log import get_log
-
-logger = get_log(__name__)
+from loguru import logger
 
 
 def download_orbits(search_path: Path, save_dir: Path) -> List[Path]:

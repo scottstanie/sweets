@@ -1,0 +1,161 @@
+interactions:
+- request:
+    body: attribute%5B%5D=int%2CPATH_NUMBER%2C71&echo_collection_id%5B%5D=C1259976861-ASF&echo_collection_id%5B%5D=C2777443834-ASF&bounding_box=-118.3957%2C33.7284%2C-118.3459%2C33.772&temporal=2025-12-01T00%3A00%3A00Z%2C2025-12-06T00%3A00%3A00Z%2C&page_size=250&options%5Btemporal%5D%5Band%5D=true&sort_key%5B%5D=-end_date&sort_key%5B%5D=granule_ur&options%5Bplatform%5D%5Bignore_case%5D=true&provider=ASF
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate, br, zstd
+      Client-Id:
+      - asf_search_v11.0.2
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '396'
+      Content-Type:
+      - application/x-www-form-urlencoded
+      User-Agent:
+      - Python/3.12.7; requests/2.32.3; asf_search/11.0.2
+    method: POST
+    uri: https://cmr.earthdata.nasa.gov/search/granules.umm_json
+  response:
+    body:
+      string: '{"hits":2,"took":190,"items":[{"meta":{"concept-type":"granule","concept-id":"G3899439645-ASF","revision-id":1,"native-id":"OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1","collection-concept-id":"C2777443834-ASF","provider-id":"ASF","format":"application/vnd.nasa.cmr.umm+json","revision-date":"2025-12-06T09:26:26.867Z"},"umm":{"TemporalExtent":{"RangeDateTime":{"BeginningDateTime":"2025-12-05T13:51:50Z","EndingDateTime":"2025-12-05T13:51:53Z"}},"OrbitCalculatedSpatialDomains":[{"OrbitNumber":5317}],"GranuleUR":"OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1","AdditionalAttributes":[{"Name":"ASCENDING_DESCENDING","Values":["DESCENDING"]},{"Name":"BEAM_MODE","Values":["IW"]},{"Name":"GROUP_ID","Values":["S1C_IWDV_0478_0485_005317_071"]},{"Name":"LOOK_DIRECTION","Values":["RIGHT"]},{"Name":"OPERA_BURST_ID","Values":["T071_151230_IW3"]},{"Name":"PATH_NUMBER","Values":["71"]},{"Name":"POLARIZATION","Values":["VV"]},{"Name":"PROCESSING_TYPE","Values":["CSLC"]},{"Name":"PRODUCT_VERSION","Values":["1.1"]},{"Name":"SUBSWATH_NAME","Values":["IW3"]}],"SpatialExtent":{"HorizontalSpatialDomain":{"Geometry":{"GPolygons":[{"Boundary":{"Points":[{"Latitude":33.82847,"Longitude":-118.30924},{"Latitude":33.94967,"Longitude":-119.16891},{"Latitude":33.78414,"Longitude":-119.20194},{"Latitude":33.66276,"Longitude":-118.34352},{"Latitude":33.82847,"Longitude":-118.30924}]}}]}}},"ProviderDates":[{"Type":"Insert","Date":"2025-12-06T09:26:24Z"},{"Type":"Update","Date":"2025-12-06T09:26:24Z"}],"CollectionReference":{"ShortName":"OPERA_L2_CSLC-S1_V1","Version":"1"},"PGEVersionClass":{"PGEName":"CSLC_S1_PGE","PGEVersion":"2.1.3"},"RelatedUrls":[{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1.h5","Type":"GET
+        DATA","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1.h5","Format":"HDF5"},{"URL":"s3://asf-cumulus-prod-opera-products/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1.h5","Type":"GET
+        DATA VIA DIRECT ACCESS","Description":"This link provides direct download
+        access via S3 to OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1.h5","Format":"HDF5"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/BROWSE/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE.png","Type":"GET
+        RELATED VISUALIZATION","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE.png","Format":"PNG"},{"URL":"s3://asf-cumulus-prod-opera-browse/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE.png","Type":"GET
+        RELATED VISUALIZATION","Description":"This link provides direct download access
+        via S3 to OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE.png","Format":"PNG"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/BROWSE/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_low-res.png","Type":"GET
+        RELATED VISUALIZATION","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_low-res.png","Format":"PNG"},{"URL":"s3://asf-cumulus-prod-opera-browse/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_low-res.png","Type":"GET
+        RELATED VISUALIZATION","Description":"This link provides direct download access
+        via S3 to OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_low-res.png","Format":"PNG"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/BROWSE/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_thumbnail.png","Type":"GET
+        RELATED VISUALIZATION","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_thumbnail.png","Format":"PNG"},{"URL":"s3://asf-cumulus-prod-opera-browse/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_thumbnail.png","Type":"GET
+        RELATED VISUALIZATION","Description":"This link provides direct download access
+        via S3 to OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_thumbnail.png","Format":"PNG"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1.h5.md5","Type":"EXTENDED
+        METADATA","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1.h5.md5","Format":"Text
+        File"},{"URL":"s3://asf-cumulus-prod-opera-products/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1.h5.md5","Type":"EXTENDED
+        METADATA","Description":"This link provides direct download access via S3
+        to OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1.h5.md5","Format":"Text
+        File"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1.iso.xml","Type":"EXTENDED
+        METADATA","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1.iso.xml","Format":"XML"},{"URL":"s3://asf-cumulus-prod-opera-products/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1.iso.xml","Type":"EXTENDED
+        METADATA","Description":"This link provides direct download access via S3
+        to OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1.iso.xml","Format":"XML"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1.iso.xml.md5","Type":"EXTENDED
+        METADATA","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1.iso.xml.md5","Format":"Text
+        File"},{"URL":"s3://asf-cumulus-prod-opera-products/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1.iso.xml.md5","Type":"EXTENDED
+        METADATA","Description":"This link provides direct download access via S3
+        to OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1.iso.xml.md5","Format":"Text
+        File"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/BROWSE/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE.png.md5","Type":"EXTENDED
+        METADATA","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE.png.md5","Format":"Text
+        File"},{"URL":"s3://asf-cumulus-prod-opera-browse/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE.png.md5","Type":"EXTENDED
+        METADATA","Description":"This link provides direct download access via S3
+        to OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE.png.md5","Format":"Text
+        File"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/BROWSE/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_low-res.png.md5","Type":"EXTENDED
+        METADATA","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_low-res.png.md5","Format":"Text
+        File"},{"URL":"s3://asf-cumulus-prod-opera-browse/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_low-res.png.md5","Type":"EXTENDED
+        METADATA","Description":"This link provides direct download access via S3
+        to OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_low-res.png.md5","Format":"Text
+        File"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/BROWSE/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_thumbnail.png.md5","Type":"EXTENDED
+        METADATA","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_thumbnail.png.md5","Format":"Text
+        File"},{"URL":"s3://asf-cumulus-prod-opera-browse/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_thumbnail.png.md5","Type":"EXTENDED
+        METADATA","Description":"This link provides direct download access via S3
+        to OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_thumbnail.png.md5","Format":"Text
+        File"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/s3credentials","Type":"VIEW
+        RELATED INFORMATION","Description":"S3 credentials endpoint for direct in-region
+        bucket access"}],"InputGranules":["S1C_IW_SLC__1SDV_20251205T135133_20251205T135200_005317_00A912_F375"],"Projects":[{"ShortName":"SNWG/OPERA"}],"DataGranule":{"DayNightFlag":"Unspecified","ProductionDateTime":"2025-12-06T09:20:22Z","ArchiveAndDistributionInformation":[{"Name":"OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1.h5","SizeInBytes":228049521,"Format":"HDF5","Checksum":{"Value":"8939a1825ebad3c4a15af3b0b7754cd4","Algorithm":"MD5"}},{"Name":"OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1.iso.xml","SizeInBytes":213171,"Format":"XML","Checksum":{"Value":"1432b58c41fa2c5871f8b11f90c9ae30","Algorithm":"MD5"}}],"Identifiers":[{"IdentifierType":"ProducerGranuleId","Identifier":"OPERA_L2_CSLC-S1_T071-151230-IW3_20251205T135150Z_20251206T084103Z_S1C_VV_v1.1"},{"Identifier":"0.24.4","IdentifierType":"Other","IdentifierName":"ISCE3Version"},{"Identifier":"0.2.5","IdentifierType":"Other","IdentifierName":"S1ReaderVersion"},{"Identifier":"0.5.6","IdentifierType":"Other","IdentifierName":"SASVersionId"}]},"Platforms":[{"ShortName":"Sentinel-1C","Instruments":[{"ShortName":"C-SAR","Characteristics":[{"Name":"LookDirection","Value":"RIGHT"}],"OperationalModes":["IW"]}]}],"MetadataSpecification":{"URL":"https://cdn.earthdata.nasa.gov/umm/granule/v1.6.6","Name":"UMM-G","Version":"1.6.6"}}},{"meta":{"concept-type":"granule","concept-id":"G3899439659-ASF","revision-id":1,"native-id":"OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1","collection-concept-id":"C2777443834-ASF","provider-id":"ASF","format":"application/vnd.nasa.cmr.umm+json","revision-date":"2025-12-06T09:26:28.493Z"},"umm":{"TemporalExtent":{"RangeDateTime":{"BeginningDateTime":"2025-12-05T13:51:49Z","EndingDateTime":"2025-12-05T13:51:52Z"}},"OrbitCalculatedSpatialDomains":[{"OrbitNumber":5317}],"GranuleUR":"OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1","AdditionalAttributes":[{"Name":"ASCENDING_DESCENDING","Values":["DESCENDING"]},{"Name":"BEAM_MODE","Values":["IW"]},{"Name":"GROUP_ID","Values":["S1C_IWDV_0478_0485_005317_071"]},{"Name":"LOOK_DIRECTION","Values":["RIGHT"]},{"Name":"OPERA_BURST_ID","Values":["T071_151230_IW2"]},{"Name":"PATH_NUMBER","Values":["71"]},{"Name":"POLARIZATION","Values":["VV"]},{"Name":"PROCESSING_TYPE","Values":["CSLC"]},{"Name":"PRODUCT_VERSION","Values":["1.1"]},{"Name":"SUBSWATH_NAME","Values":["IW2"]}],"SpatialExtent":{"HorizontalSpatialDomain":{"Geometry":{"GPolygons":[{"Boundary":{"Points":[{"Latitude":33.74769,"Longitude":-117.36529},{"Latitude":33.89118,"Longitude":-118.33223},{"Latitude":33.72559,"Longitude":-118.36813},{"Latitude":33.58226,"Longitude":-117.40462},{"Latitude":33.74769,"Longitude":-117.36529}]}}]}}},"ProviderDates":[{"Type":"Insert","Date":"2025-12-06T09:26:26Z"},{"Type":"Update","Date":"2025-12-06T09:26:26Z"}],"CollectionReference":{"ShortName":"OPERA_L2_CSLC-S1_V1","Version":"1"},"PGEVersionClass":{"PGEName":"CSLC_S1_PGE","PGEVersion":"2.1.3"},"RelatedUrls":[{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1.h5","Type":"GET
+        DATA","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1.h5","Format":"HDF5"},{"URL":"s3://asf-cumulus-prod-opera-products/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1.h5","Type":"GET
+        DATA VIA DIRECT ACCESS","Description":"This link provides direct download
+        access via S3 to OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1.h5","Format":"HDF5"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/BROWSE/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE.png","Type":"GET
+        RELATED VISUALIZATION","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE.png","Format":"PNG"},{"URL":"s3://asf-cumulus-prod-opera-browse/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE.png","Type":"GET
+        RELATED VISUALIZATION","Description":"This link provides direct download access
+        via S3 to OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE.png","Format":"PNG"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/BROWSE/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_low-res.png","Type":"GET
+        RELATED VISUALIZATION","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_low-res.png","Format":"PNG"},{"URL":"s3://asf-cumulus-prod-opera-browse/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_low-res.png","Type":"GET
+        RELATED VISUALIZATION","Description":"This link provides direct download access
+        via S3 to OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_low-res.png","Format":"PNG"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/BROWSE/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_thumbnail.png","Type":"GET
+        RELATED VISUALIZATION","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_thumbnail.png","Format":"PNG"},{"URL":"s3://asf-cumulus-prod-opera-browse/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_thumbnail.png","Type":"GET
+        RELATED VISUALIZATION","Description":"This link provides direct download access
+        via S3 to OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_thumbnail.png","Format":"PNG"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1.h5.md5","Type":"EXTENDED
+        METADATA","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1.h5.md5","Format":"Text
+        File"},{"URL":"s3://asf-cumulus-prod-opera-products/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1.h5.md5","Type":"EXTENDED
+        METADATA","Description":"This link provides direct download access via S3
+        to OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1.h5.md5","Format":"Text
+        File"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1.iso.xml","Type":"EXTENDED
+        METADATA","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1.iso.xml","Format":"XML"},{"URL":"s3://asf-cumulus-prod-opera-products/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1.iso.xml","Type":"EXTENDED
+        METADATA","Description":"This link provides direct download access via S3
+        to OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1.iso.xml","Format":"XML"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1.iso.xml.md5","Type":"EXTENDED
+        METADATA","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1.iso.xml.md5","Format":"Text
+        File"},{"URL":"s3://asf-cumulus-prod-opera-products/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1.iso.xml.md5","Type":"EXTENDED
+        METADATA","Description":"This link provides direct download access via S3
+        to OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1.iso.xml.md5","Format":"Text
+        File"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/BROWSE/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE.png.md5","Type":"EXTENDED
+        METADATA","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE.png.md5","Format":"Text
+        File"},{"URL":"s3://asf-cumulus-prod-opera-browse/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE.png.md5","Type":"EXTENDED
+        METADATA","Description":"This link provides direct download access via S3
+        to OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE.png.md5","Format":"Text
+        File"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/BROWSE/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_low-res.png.md5","Type":"EXTENDED
+        METADATA","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_low-res.png.md5","Format":"Text
+        File"},{"URL":"s3://asf-cumulus-prod-opera-browse/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_low-res.png.md5","Type":"EXTENDED
+        METADATA","Description":"This link provides direct download access via S3
+        to OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_low-res.png.md5","Format":"Text
+        File"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/BROWSE/OPERA/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_thumbnail.png.md5","Type":"EXTENDED
+        METADATA","Description":"Download OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_thumbnail.png.md5","Format":"Text
+        File"},{"URL":"s3://asf-cumulus-prod-opera-browse/OPERA_L2_CSLC-S1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1/OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_thumbnail.png.md5","Type":"EXTENDED
+        METADATA","Description":"This link provides direct download access via S3
+        to OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1_BROWSE_thumbnail.png.md5","Format":"Text
+        File"},{"URL":"https://cumulus.asf.earthdatacloud.nasa.gov/s3credentials","Type":"VIEW
+        RELATED INFORMATION","Description":"S3 credentials endpoint for direct in-region
+        bucket access"}],"InputGranules":["S1C_IW_SLC__1SDV_20251205T135133_20251205T135200_005317_00A912_F375"],"Projects":[{"ShortName":"SNWG/OPERA"}],"DataGranule":{"DayNightFlag":"Unspecified","ProductionDateTime":"2025-12-06T09:06:46Z","ArchiveAndDistributionInformation":[{"Name":"OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1.h5","SizeInBytes":271805291,"Format":"HDF5","Checksum":{"Value":"9807c605b4885b372cbb2d66906ee674","Algorithm":"MD5"}},{"Name":"OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1.iso.xml","SizeInBytes":213163,"Format":"XML","Checksum":{"Value":"68692032641cbb25ec5fa1340d388f98","Algorithm":"MD5"}}],"Identifiers":[{"IdentifierType":"ProducerGranuleId","Identifier":"OPERA_L2_CSLC-S1_T071-151230-IW2_20251205T135149Z_20251206T084103Z_S1C_VV_v1.1"},{"Identifier":"0.24.4","IdentifierType":"Other","IdentifierName":"ISCE3Version"},{"Identifier":"0.2.5","IdentifierType":"Other","IdentifierName":"S1ReaderVersion"},{"Identifier":"0.5.6","IdentifierType":"Other","IdentifierName":"SASVersionId"}]},"Platforms":[{"ShortName":"Sentinel-1C","Instruments":[{"ShortName":"C-SAR","Characteristics":[{"Name":"LookDirection","Value":"RIGHT"}],"OperationalModes":["IW"]}]}],"MetadataSpecification":{"URL":"https://cdn.earthdata.nasa.gov/umm/granule/v1.6.6","Name":"UMM-G","Version":"1.6.6"}}}]}'
+    headers:
+      Access-Control-Allow-Origin:
+      - '*'
+      Access-Control-Expose-Headers:
+      - CMR-Hits, CMR-Request-Id, X-Request-Id, CMR-Scroll-Id, CMR-Search-After, CMR-Timed-Out,
+        CMR-Shapefile-Original-Point-Count, CMR-Shapefile-Simplified-Point-Count
+      CMR-Hits:
+      - '2'
+      CMR-Request-Id:
+      - 5559f822-c6ed-47dc-92cb-9044b7ee14e4
+      CMR-Search-After:
+      - '[1764942712000,"opera_l2_cslc-s1_t071-151230-iw2_20251205t135149z_20251206t084103z_s1c_vv_v1.1",3899439659]'
+      CMR-Took:
+      - '191'
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-MD5:
+      - 8a0a5a9a87d11c93af294c815097e166
+      Content-SHA1:
+      - b9393a57d8b685f10a0c6add2503e95155127178
+      Content-Type:
+      - application/vnd.nasa.cmr.umm_results+json;version=1.6.6; charset=utf-8
+      Date:
+      - Mon, 13 Apr 2026 20:09:45 GMT
+      Server:
+      - ServerTokens ProductOnly
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Transfer-Encoding:
+      - chunked
+      Vary:
+      - Accept-Encoding
+      Via:
+      - 1.1 7375f2360b80ec8c602f04aa2cc7a57c.cloudfront.net (CloudFront)
+      X-Amz-Cf-Id:
+      - LbjmsfEgraW1-GBt32AOh7PRX_37u2nisXJm89Q5yGs5rg_9d0jEfg==
+      X-Amz-Cf-Pop:
+      - IAD12-P3
+      X-Cache:
+      - Miss from cloudfront
+      X-Content-Type-Options:
+      - nosniff
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-Request-Id:
+      - LbjmsfEgraW1-GBt32AOh7PRX_37u2nisXJm89Q5yGs5rg_9d0jEfg==
+      X-XSS-Protection:
+      - 1; mode=block
+    status:
+      code: 200
+      message: OK
+version: 1

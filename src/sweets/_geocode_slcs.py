@@ -11,11 +11,9 @@ import journal
 from compass import s1_geocode_stack
 from compass.utils.geo_runconfig import GeoRunConfig
 
-from ._log import get_log
+from loguru import logger
+
 from ._types import Filename
-
-logger = get_log(__name__)
-
 
 ModuleNames = Literal["s1_geocode_slc", "s1_static_layers"]
 
@@ -68,7 +66,11 @@ def _get_cfg_setup(
     burst_id_date = "_".join(burst_id_tup)
     outfile = Path(params.hdf5_path)
     if module_name == "s1_static_layers":
-        outfile = outfile.with_name("static_layers_" + outfile.name)
+        # Static layers are per-burst, not per-date — COMPASS writes them as
+        # `static_layers_<burst>.h5`. Strip the trailing date from the name
+        # before adding the prefix.
+        burst_no_date = outfile.stem.rsplit("_", 1)[0]
+        outfile = outfile.with_name(f"static_layers_{burst_no_date}.h5")
     return cfg, outfile, burst_id_date
 
 

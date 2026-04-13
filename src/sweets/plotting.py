@@ -5,7 +5,6 @@ from typing import Optional, Sequence, Tuple, Union
 
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-import colorcet
 import geopandas as gpd
 import ipywidgets
 import matplotlib as mpl
@@ -15,18 +14,41 @@ import numpy as np
 from cartopy.io import shapereader
 from cartopy.mpl.gridliner import LATITUDE_FORMATTER, LONGITUDE_FORMATTER
 from dolphin import io
+from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.image import AxesImage
 from numpy.typing import ArrayLike
 from shapely.geometry import Polygon, box
 
 from ._types import Filename
-from .core import UNW_SUFFIX
+
+# Cyclic "oil slick" colormap inspired by thin-film interference colors.
+# Node order follows the interference sequence
+# dark -> violet -> blue -> cyan -> green -> yellow -> orange -> red -> dark
+# and loops back to dark so it is safe to wrap phase in [-pi, pi].
+_OIL_SLICK_NODES = np.array(
+    [
+        (0.02, 0.01, 0.06),  # near-black (origin / 2pi)
+        (0.22, 0.00, 0.48),  # deep violet
+        (0.02, 0.08, 0.82),  # royal blue
+        (0.00, 0.58, 0.88),  # cyan
+        (0.00, 0.72, 0.32),  # green
+        (0.72, 0.92, 0.00),  # yellow-green
+        (1.00, 0.82, 0.00),  # yellow
+        (1.00, 0.40, 0.00),  # orange
+        (0.88, 0.02, 0.18),  # red
+        (0.52, 0.00, 0.38),  # dark magenta
+        (0.02, 0.01, 0.06),  # back to near-black
+    ]
+)
+OIL_SLICK_CMAP = LinearSegmentedColormap.from_list("oil_slick", _OIL_SLICK_NODES, N=512)
+if "oil_slick" not in mpl.colormaps:
+    mpl.colormaps.register(OIL_SLICK_CMAP, name="oil_slick")
 
 
 def plot_ifg(
     img: Optional[ArrayLike] = None,
     filename: Optional[Filename] = None,
-    phase_cmap: str = colorcet.m_CET_C8,
+    phase_cmap: str = "oil_slick",
     ax: Optional[plt.Axes] = None,
     add_colorbar: bool = True,
     title: str = "",
@@ -128,7 +150,7 @@ def browse_ifgs(
     figsize: tuple[int, int] = (7, 4),
     vm_unw: float = 10,
     vm_cor: float = 1,
-    unw_suffix: str = UNW_SUFFIX,
+    unw_suffix: str = ".unw.tif",
     layout="box",
     axes: Optional[plt.Axes] = None,
     ref_unw: Optional[tuple[float, float]] = None,
@@ -411,6 +433,7 @@ def plot_area_of_interest(
             scale="110m",
             facecolor="none",
         )
+        assert bbox is not None
         buffered_bounds = box(*bbox).buffer(buffer).bounds
         left, bottom, right, top = buffered_bounds
         extent = (left, right, bottom, top)

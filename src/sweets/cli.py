@@ -1,237 +1,228 @@
+"""Sweets command-line interface (tyro-driven).
+
+Three subcommands:
+
+- ``sweets config``  — write a ``sweets_config.yaml`` from a few flags.
+- ``sweets run``     — execute a workflow from a config file.
+- ``sweets server``  — launch the (WIP) web UI server.
+
+The CLI intentionally exposes only the most common knobs. For the long tail
+(dolphin half-window, COMPASS posting, etc.) edit the YAML directly or
+construct :class:`sweets.core.Workflow` in Python.
+"""
+
 from __future__ import annotations
 
-import argparse
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Annotated, Literal, Optional
+
+import tyro
+
+SourceKind = Literal["safe", "opera-cslc", "nisar-gslc"]
 
 
-def _get_cli_args() -> dict:
-    parser = argparse.ArgumentParser(
-        prog=__package__,
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    subparsers = parser.add_subparsers()
-    config_parser = subparsers.add_parser(
-        "config",
-        help="Create a sweets_config.yaml file",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    config_parser._action_groups.pop()
+@dataclass
+class ConfigCmd:
+    """Create a sweets_config.yaml from CLI arguments."""
 
-    base = config_parser.add_argument_group()
-    base.add_argument(
-        "--save-empty",
-        action="store_true",
-        help="Print an empty config file to `outfile",
-    )
-    base.add_argument(
-        "-o",
-        "--outfile",
-        help=(
-            "Path to save the config file to. \nIf not specified, will save to"
-            " `sweets_config.yaml` in the current directory."
-        ),
-        default="sweets_config.yaml",
-    )
-    base.add_argument(
-        "-b",
-        "--bbox",
-        nargs=4,
-        metavar=("left", "bottom", "right", "top"),
-        type=float,
-        help=(
-            "Bounding box of area of interest in decimal degrees longitude/latitude: \n"
-            "  (e.g. --bbox -106.1 30.1 -103.1 33.1 ). \n"
-        ),
-    )
-    base.add_argument(
-        "--wkt",
-        help=(
-            "Alternate to bounding box specification: \nWKT string (or file containing"
-            " polygon) for AOI bounds (e.g. from the ASF Vertex tool). \nIf passing "
-            " a string polygon, you must enclose in quotes."
-        ),
-    )
-    aoi = config_parser.add_argument_group(
-        title="asf_query",
-        description="Arguments specifying the area of interest for the S1 data query",
-    )
-    aoi.add_argument(
-        "--track",
-        "--relativeOrbit",
-        dest="relativeOrbit",
-        type=int,
-        help="Required: the relative orbit/track",
-    )
-    aoi.add_argument(
-        "--start",
-        help="Starting date for query (recommended: YYYY-MM-DD)",
-    )
-    aoi.add_argument(
-        "--end",
-        help="Ending date for query (recommended: YYYY-MM-DD). Defaults to today.",
-    )
-    aoi.add_argument(
-        "--frames",
-        type=int,
-        nargs=2,
-        metavar=("start_frame", "end_frame"),
-        help=(
-            "Limit to a range of frames (e.g. --frames 1 10). Frame numbers come from"
-            " ASF website"
-        ),
-    )
-    aoi.add_argument(
-        "--out-dir",
-        help=(
-            "Directory to store data in (or directory containing existing downloads)."
-            " If None, will store in `data/` "
-        ),
-    )
+    start: str
+    """Start date for the burst search (YYYY-MM-DD)."""
 
-    interferogram_options = config_parser.add_argument_group("interferogram_options")
-    interferogram_options.add_argument(
-        "--looks",
-        type=int,
-        nargs=2,
-        metavar=("az_looks", "range_looks"),
-        default=[6, 12],
-        help=(
-            "Number of looks in azimuth (rows) and range (cols) to use for"
-            " interferograms (e.g. --looks 6 12). GSLCs are geocoded at 10m x 5m"
-            " posting, so default looks of 6x12 are 60m x 60m."
-        ),
-    )
-    interferogram_options.add_argument(
-        "-t",
-        "--max-temporal-baseline",
-        type=int,
-        help="Maximum temporal baseline (in days) to consider for interferograms.",
-    )
-    interferogram_options.add_argument(
-        "--max-bandwidth",
-        type=int,
-        default=4,
-        help="Alternative to temporal baseline: form the nearest n- ifgs.",
-    )
-    base.add_argument(
-        "--orbit-dir",
-        help=(
-            "Directory to store orbit files in (or directory containing existing"
-            " orbits). If None, will store in `orbits/` "
-        ),
-    )
-    base.add_argument(
-        "-nw",
-        "--n-workers",
-        type=int,
-        default=4,
-        help=(
-            "Number of background workers to use for parallel processing"
-            " GSLC/ifgs/unwrapping."
-        ),
-    )
-    base.add_argument(
-        "-tpw",
-        "--threads-per-worker",
-        type=int,
-        default=16,
-        help=(
-            "For each background worker, number of threads to use (e.g."
-            " OMP_NUM_THREADS, or in numpy multithreading)."
-        ),
-    )
-    config_parser.set_defaults(func=create_config)
+    end: str
+    """End date for the burst search (YYYY-MM-DD)."""
 
-    # ##########################
-    run_parser = subparsers.add_parser(
-        "run",
-        help="Run the workflow using a sweets_config.yaml file",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
+    bbox: Optional[tuple[float, float, float, float]] = None
+    """AOI as left bottom right top in decimal degrees. One of --bbox or --wkt is required."""
 
-    run_parser.add_argument(
-        "config_file",
-        type=Path,
-        help=(
-            "Path to a pre-existing sweets_config.yaml file. \nIf not specified, a new"
-            " config will be created from the command line arguments."
-        ),
-    )
-    run_parser.add_argument(
-        "--starting-step",
-        type=int,
-        default=1,
-        help=(
-            "If > 1, will skip earlier steps of the workflow. Step: "
-            "1. Download RSLC data from ASF. 2. Create GSLCs. "
-            "3. Create burst interfereograms. "
-            "4. Stitch burst interferograms into one per date. "
-            "5. Unwrap. "
-        ),
-    )
+    wkt: Optional[str] = None
+    """AOI as a WKT polygon string, or path to a .wkt file. Overrides --bbox."""
 
-    run_parser.set_defaults(func=run_workflow)
+    source: SourceKind = "safe"
+    """Where the input SLCs come from. `safe` (default): raw S1 bursts via burst2safe + COMPASS. `opera-cslc`: pre-made OPERA CSLC HDF5s from ASF. `nisar-gslc`: pre-made NISAR GSLC HDF5s via CMR (L-band, UTM, already geocoded)."""
 
-    arg_groups = {}
+    track: Optional[int] = None
+    """Relative orbit / track number. Required for --source safe; optional but recommended for --source opera-cslc and --source nisar-gslc. For NISAR this is the `Track` field on ASF Vertex (the RRR digits in the granule filename)."""
 
-    args = parser.parse_args()
-    arg_dict = vars(args)
-    if not arg_dict:
-        parser.print_help()
-        sys.exit(1)
+    frame: Optional[int] = None
+    """NISAR track-frame number — the `Frame` field on ASF Vertex (the TTT digits in the granule filename, e.g. `71`). Only honored by --source nisar-gslc."""
 
-    if arg_dict["func"].__name__ == "create_config":
-        for group in config_parser._action_groups:
-            # skip positional arguments
-            if group.title == "positional arguments":
-                continue
-            group_dict = {
-                a.dest: getattr(args, a.dest, None) for a in group._group_actions
+    frequency: Literal["A", "B"] = "A"
+    """NISAR frequency band (`A` = L-band, `B` reserved). Only honored by --source nisar-gslc."""
+
+    out_dir: Path = field(default_factory=lambda: Path("data"))
+    """Where downloaded SLC inputs will live."""
+
+    work_dir: Path = field(default_factory=Path.cwd)
+    """Top-level working directory for the workflow."""
+
+    polarizations: list[str] = field(default_factory=lambda: ["VV"])
+    """Polarizations to keep. Defaults to ['VV'] for S1/OPERA; pass --polarizations HH for NISAR."""
+
+    swaths: Optional[list[str]] = None
+    """Restrict to specific subswaths (e.g. ['IW2']). Only honored by --source safe."""
+
+    n_workers: int = 4
+    """Process pool size for COMPASS geocoding (--source safe only)."""
+
+    do_tropo: bool = False
+    """Run the OPERA L4 TROPO-ZENITH correction step after dolphin (off by default; not supported with --source nisar-gslc)."""
+
+    output: Path = Path("sweets_config.yaml")
+    """Where to write the config file."""
+
+    with_schema: bool = True
+    """Also write a sibling `<output>.schema.json` next to the YAML and
+    prepend a `# yaml-language-server: $schema=...` modeline. Editors
+    with the YAML Language Server (VS Code, Neovim-yamlls, JetBrains,
+    etc.) use that to provide inline hover docs, autocomplete, and
+    validation for every field in the sweets config. Pass
+    --no-with-schema to skip."""
+
+    def run(self) -> None:
+        """Build and dump a Workflow config to YAML."""
+        # Heavy imports go here so `sweets --help` is snappy.
+        from sweets.core import Workflow
+
+        if self.bbox is None and self.wkt is None:
+            print("error: one of --bbox or --wkt is required", file=sys.stderr)
+            raise SystemExit(2)
+
+        search: dict = {
+            "kind": self.source,
+            "start": self.start,
+            "end": self.end,
+            "out_dir": self.out_dir,
+        }
+        if self.source == "safe":
+            if self.track is None:
+                print("error: --track is required for --source safe", file=sys.stderr)
+                raise SystemExit(2)
+            search["track"] = self.track
+            search["polarizations"] = self.polarizations
+            search["swaths"] = self.swaths
+        elif self.source == "opera-cslc":
+            # `track` is optional on OPERA — ASF will filter on AOI alone.
+            if self.track is not None:
+                search["track"] = self.track
+        elif self.source == "nisar-gslc":
+            if self.track is not None:
+                search["track"] = self.track
+            if self.frame is not None:
+                search["frame"] = self.frame
+            search["frequency"] = self.frequency
+            search["polarizations"] = self.polarizations
+
+        workflow = Workflow.model_validate(
+            {
+                "bbox": self.bbox,
+                "wkt": self.wkt,
+                "work_dir": self.work_dir,
+                "n_workers": self.n_workers,
+                "search": search,
+                "tropo": {"enabled": self.do_tropo},
             }
-            # remove None values
-            group_dict = {k: v for k, v in group_dict.items() if v is not None}
-            if group.title:
-                arg_groups[group.title] = group_dict
-            else:
-                arg_groups.update(group_dict)  # type: ignore
-        arg_groups["func"] = arg_dict["func"]
-        return arg_groups
-    else:
-        return arg_dict
+        )
+        workflow.to_yaml(self.output)
+        if self.with_schema:
+            _emit_schema_sidecar(self.output)
+        print(f"wrote {self.output}", file=sys.stderr)
 
 
-def run_workflow(kwargs: dict):
-    """Run the workflow using a sweets_config.yaml file."""
-    # importing below for faster CLI startup
+def _emit_schema_sidecar(yaml_path: Path) -> None:
+    """Write a JSON schema next to the YAML and add a modeline comment.
+
+    The schema is `Workflow.model_json_schema()` emitted verbatim; pydantic
+    produces JSON Schema Draft 2020-12 with a `oneOf + discriminator` for
+    the `Workflow.search` field, which the YAML Language Server handles
+    natively. The modeline is read by the redhat.vscode-yaml extension
+    (and every editor that speaks yamlls) to attach the schema at load
+    time.
+    """
+    import json
+
     from sweets.core import Workflow
 
-    cfg_file = kwargs["config_file"]
-    if not cfg_file.exists():
-        raise ValueError(f"Config file {cfg_file} does not exist")
+    schema_path = yaml_path.with_suffix(yaml_path.suffix + ".schema.json")
+    schema_path.write_text(json.dumps(Workflow.model_json_schema(), indent=2) + "\n")
 
-    if "yaml" not in cfg_file.suffix and "yml" not in cfg_file.suffix:
-        raise ValueError(f"Config file {cfg_file} is not a yaml file.")
-
-    workflow = Workflow.from_yaml(cfg_file)
-    workflow.run(starting_step=kwargs.get("starting_step", 1))
-
-
-def create_config(kwargs: dict):
-    """Create a sweets_config.yaml file from command line arguments."""
-    from sweets.core import Workflow
-
-    outfile = kwargs.pop("outfile", None)
-    print(f"Creating config file at {outfile}.", file=sys.stderr)
-    if kwargs.pop("save_empty", False):
-        Workflow.print_yaml_schema(outfile)
-    else:
-        workflow = Workflow(**kwargs)
-        workflow.to_yaml(outfile)
+    existing = yaml_path.read_text()
+    modeline = f"# yaml-language-server: $schema={schema_path.name}\n"
+    if modeline.strip() not in existing:
+        yaml_path.write_text(modeline + existing)
+    print(f"wrote {schema_path}", file=sys.stderr)
 
 
-def main():
-    """Top-level command line interface to the workflows."""
-    arg_dict = _get_cli_args()
-    func = arg_dict.pop("func")
-    func(arg_dict)
+@dataclass
+class SchemaCmd:
+    """Dump the JSON schema for the sweets workflow config to stdout."""
+
+    def run(self) -> None:
+        import json
+
+        from sweets.core import Workflow
+
+        print(json.dumps(Workflow.model_json_schema(), indent=2))
+
+
+@dataclass
+class ReportCmd:
+    """Render a single-file HTML report for a finished sweets run."""
+
+    config_file: Annotated[Path, tyro.conf.Positional]
+    """Path to the sweets_config.yaml used for the run. A work directory
+    containing a sweets_config.yaml is also accepted and resolved to the
+    yaml inside it."""
+
+    output: Optional[Path] = None
+    """Where to write the report. Defaults to `<work_dir>/sweets_report.html`."""
+
+    def run(self) -> None:
+        from sweets._report import build_report
+
+        path = build_report(
+            config_file=self.config_file,
+            output=self.output,
+        )
+        print(f"wrote {path}", file=sys.stderr)
+
+
+@dataclass
+class RunCmd:
+    """Execute a sweets workflow from a config file."""
+
+    config_file: Annotated[Path, tyro.conf.Positional]
+    """Path to a sweets_config.yaml."""
+
+    starting_step: int = 1
+    """Skip earlier stages (1=download, 2=geocode, 3=dolphin)."""
+
+    def run(self) -> None:
+        """Load the workflow and run it."""
+        from sweets.core import Workflow
+
+        if not self.config_file.exists():
+            msg = f"config file {self.config_file} does not exist"
+            raise SystemExit(msg)
+        workflow = Workflow.from_yaml(self.config_file)
+        workflow.run(starting_step=self.starting_step)
+
+
+def main() -> None:
+    """Top-level CLI entry point."""
+    cmd = tyro.extras.subcommand_cli_from_dict(
+        {
+            "config": ConfigCmd,
+            "run": RunCmd,
+            "schema": SchemaCmd,
+            "report": ReportCmd,
+        },
+        prog="sweets",
+        description="Sentinel-1 InSAR workflow runner.",
+    )
+    cmd.run()
+
+
+if __name__ == "__main__":
+    main()

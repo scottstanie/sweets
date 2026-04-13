@@ -7,7 +7,7 @@ mkdocs:
   configuration: mkdocs.yml
 
 conda:
-  environment: conda-env.yml
+  environment: environment.yml
 
 python:
   install:

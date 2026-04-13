@@ -154,12 +154,14 @@ without re-parsing terminal text.
 
 ## Deliberately not doing (for now)
 
-- **Full web UI as a first-party sweets thing.** The `src/sweets/web/`
-  scaffold can stay parked. bowser handles the interactive-map use case
-  much better already, and R1 (HTML report) covers the "email the
-  result" use case with zero dependencies. A custom sweets web UI would
-  multiply maintenance without expanding the audience beyond what
-  bowser already serves.
+- **Full web UI as a first-party sweets thing.** The old scaffold lives
+  on branch `web-ui-scaffold`; it was excluded from the v0.3 PR because
+  it was never tested and carried untested deps (sqlmodel, titiler,
+  etc.). bowser handles the interactive-map use case much better
+  already, and R1 (HTML report) covers the "email the result" use case
+  with zero dependencies. A custom sweets web UI would multiply
+  maintenance without expanding the audience beyond what bowser already
+  serves.
 - **Automatic source-model fitting (Mogi, Okada, fault-slip).** Real
   InSAR practitioners have their own preferred inversion stacks. sweets
   competing with them is a tarpit.

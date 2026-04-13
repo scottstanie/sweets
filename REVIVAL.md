@@ -114,7 +114,7 @@ output quality)
 | **tropo correction** | n/a | new opt-in post-step (`--do-tropo`) wrapping `opera_utils.tropo.create_tropo_corrections_for_stack` + `apply_tropo_to_unwrapped` |
 | **CLI** | argparse, ~280 lines, manual group dict shuffling | `tyro`, 3 dataclass-style subcommands; `--source`, `--do-tropo`, positional `sweets run <config>` |
 | **packaging** | `pixi.toml` "thrown in" alongside the pip install | `pyproject.toml` is pixi-first; `[tool.pixi.*]` is the canonical env definition |
-| **web UI** | partial scaffolding (uncommitted) | committed but **tabled** under `src/sweets/web/`; mypy/pre-commit excluded |
+| **web UI** | partial scaffolding (uncommitted) | moved to branch `web-ui-scaffold`; not in this PR |
 
 ## Open issues this branch addresses
 
@@ -175,8 +175,9 @@ output quality)
    filename-based L/S constant, which is within ~1% of the split-mode
    centers. Revisit when freqB-only test data shows up or mm-accurate
    displacement becomes a requirement.
-6. **Web UI** — left exactly as Scott had it under `src/sweets/web/`. Excluded
-   from mypy and from this revival's scope.
+6. **Web UI** — moved to branch `web-ui-scaffold` and excluded from
+   this PR. The bowser integration (FUTURE_IDEAS R2) and the `sweets
+   report` HTML (R1, landed) are the two lighter-weight alternatives.
 
 ## Things I (Claude) deliberately did NOT do
 

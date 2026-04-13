@@ -213,39 +213,6 @@ class RunCmd:
         workflow.run(starting_step=self.starting_step)
 
 
-@dataclass
-class ServerCmd:
-    """Launch the (WIP) sweets web UI server."""
-
-    host: str = "127.0.0.1"
-    """Bind address."""
-
-    port: int = 8000
-    """TCP port."""
-
-    reload: bool = False
-    """Auto-reload on code changes (dev mode)."""
-
-    def run(self) -> None:
-        """Run uvicorn against sweets.web.app:app."""
-        try:
-            import uvicorn
-        except ImportError:
-            print(
-                "Web dependencies not installed. Install with one of:\n"
-                "  pip install 'sweets[web]'\n"
-                "  pixi install -e web",
-                file=sys.stderr,
-            )
-            raise SystemExit(1) from None
-        uvicorn.run(
-            "sweets.web.app:app",
-            host=self.host,
-            port=self.port,
-            reload=self.reload,
-        )
-
-
 def main() -> None:
     """Top-level CLI entry point."""
     cmd = tyro.extras.subcommand_cli_from_dict(
@@ -254,7 +221,6 @@ def main() -> None:
             "run": RunCmd,
             "schema": SchemaCmd,
             "report": ReportCmd,
-            "server": ServerCmd,
         },
         prog="sweets",
         description="Sentinel-1 InSAR workflow runner.",

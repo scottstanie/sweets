@@ -170,14 +170,6 @@ cartopy = "*"
 matplotlib = "*"
 colorcet = "*"
 
-[tool.pixi.feature.web.dependencies]
-fastapi = ">=0.100"
-uvicorn = "*"
-sqlmodel = "*"
-python-multipart = "*"
-websockets = "*"
-titiler-core = "*"
-
 # CPU (default) isce3 build — works on every platform sweets supports.
 [tool.pixi.feature.cpu.dependencies]
 isce3 = ">=0.24"
@@ -196,7 +188,6 @@ cuda = "12"
 default = { features = ["test", "plotting", "cpu"], solve-group = "default" }
 test = { features = ["test", "cpu"], solve-group = "default" }
 plotting = { features = ["plotting", "cpu"], solve-group = "default" }
-web = { features = ["web", "plotting", "cpu"], solve-group = "default" }
 minimal = { features = ["cpu"], solve-group = "default" }
 # GPU environment: same extras as `default` but swaps isce3 -> isce3-cuda.
 # `solve-group` is deliberately separate so pixi doesn't try to reconcile
@@ -222,9 +213,6 @@ known_first_party = ["sweets"]
 python_version = "3.12"
 ignore_missing_imports = true
 plugins = ["pydantic.mypy"]
-# The web UI is WIP and tabled; sqlmodel's `table=True` metaclass argument
-# trips mypy without the sqlmodel plugin. Skip until web is revived.
-exclude = "src/sweets/web/"
 
 [tool.pydocstyle]
 ignore = "D100,D102,D104,D105,D106,D107,D203,D204,D213,D413"

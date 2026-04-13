@@ -15,22 +15,16 @@ End-to-end InSAR workflow that turns a single AOI + date range into unwrapped in
 
 Interchangeable input sources, accessible through the same `Workflow` object:
 
-| `--source`         | What it is                                                                                                                                                                                                                                                                                                                              | Tools used                     |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `safe` *(default)* | Raw Sentinel-1 bursts, downloaded as just the bursts that intersect your AOI via `burst2safe`, then geocoded by COMPASS.                                                                                                                                                                                                                | burst2safe, s1-reader, COMPASS |
-| `opera-cslc`       | Pre-made [OPERA L2 CSLC-S1 HDF5s](https://www.jpl.nasa.gov/go/opera/products/cslc-product) from ASF DAAC, plus their matching CSLC-STATIC layers for geometry. Faster than `safe` when OPERA has produced for your AOI (CONUS, see [OPERA product suite](https://www.jpl.nasa.gov/go/opera/products/cslc-product-suite/) for coverage). | opera-utils                    |
-| `nisar-gslc`       | Pre-made [NISAR L2 GSLC HDF5s](https://nisar.jpl.nasa.gov/) via CMR — L-band, already geocoded in UTM.                                                                                                                                                                                                                                  | opera-utils                    |
+| `--source`         | What it is                                                                                                                                                                                                                                                                                                                                                                                                                      | Tools used                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `safe` *(default)* | Sentinel-1 Level-1 bursts that intersect your AOI via `burst2safe`. Geocoded SLCs (GSLCs) created by COMPASS.                                                                                                                                                                                                                                                                                                                   | burst2safe, s1-reader, COMPASS |
+| `opera-cslc`       | Pre-made [OPERA L2 CSLC-S1 HDF5s](https://www.jpl.nasa.gov/go/opera/products/cslc-product) from ASF DAAC, plus their matching CSLC-STATIC layers for geometry. Faster than `safe` when OPERA has produced for your AOI (CONUS, see [OPERA product suite](https://www.jpl.nasa.gov/go/opera/products/cslc-product-suite/) for coverage) if you are fine with their processing parameters (e.g., 5 meter x 10 meter UTM posting). | opera-utils                    |
+| `nisar-gslc`       | [NISAR L2 GSLC products](https://nisar.jpl.nasa.gov/) geocoded in UTM.                                                                                                                                                                                                                                                                                                                                                          | opera-utils                    |
 
 An optional `--do-tropo` flag adds a post-dolphin OPERA L4 TROPO-ZENITH
 correction step for `safe` and `opera-cslc` (not yet wired for NISAR).
 
 ## Install
-
-Sweets is available on `conda-forge`:
-
-```bash
-conda install -c conda-forge sweets
-```
 
 We recommend [pixi](https://pixi.sh/) for managing local environments.
 
@@ -57,8 +51,11 @@ macOS can't install this environment (conda-forge doesn't ship osx-arm64
 builds of `isce3-cuda`); `pixi shell` without `-e gpu` is the right default
 for every non-CUDA machine.
 
-If you're stuck without pixi, there's a derived `environment.yml` suitable for
-conda/mamba, but you'll have to pin the fork versions yourself.
+A [conda-forge feedstock](https://github.com/conda-forge/sweets-feedstock)
+exists for `sweets`. It currently tracks the pre-v0.2 API; we'll bump it to
+the new release once the fork dependencies (`s1-reader`, `COMPASS`,
+`opera-utils`, `dolphin`, `spurt`) are merged upstream and a v0.2 release is
+cut.
 
 ## Usage
 
@@ -71,7 +68,8 @@ sweets run --help
 
 To configure a workflow the minimum inputs are an AOI (`--bbox` or `--wkt`), a
 date range (`--start` / `--end`), and — for the Sentinel-1 path — the relative
-orbit (`--track`).
+orbit (`--track`). `--out-dir` is where raw downloads land; `--work-dir` holds
+the workflow outputs.
 
 Raw Sentinel-1 bursts (default):
 

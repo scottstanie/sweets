@@ -18,8 +18,9 @@ The flow is:
    radians of phase via ``4 * pi / wavelength``, and subtract from the
    unwrapped phase. Write the corrected raster alongside the originals.
 
-The OPERA CSLC reader is registered eagerly when this module is imported,
-so any sweets code path that triggers tropo gets the backend automatically.
+The OPERA CSLC reader is registered lazily the first time
+:func:`create_tropo_corrections` runs, so importing this module stays cheap
+and does not require the ``opera_utils.tropo`` subpackage to be present.
 """
 
 from __future__ import annotations
@@ -157,7 +158,6 @@ def _force_threaded_dns_resolver() -> None:
     aiohttp.resolver.DefaultResolver = aiohttp.resolver.ThreadedResolver
 
 
-_register_opera_cslc_reader()
 _force_threaded_dns_resolver()
 
 
@@ -196,6 +196,8 @@ def create_tropo_corrections(
 
     """
     from opera_utils.tropo import create_tropo_corrections_for_stack
+
+    _register_opera_cslc_reader()
 
     options = options or TropoOptions()
     output_dir = Path(output_dir).resolve()

@@ -102,8 +102,20 @@ compass = { git = "https://github.com/scottstanie/COMPASS.git", branch = "develo
 # that the sweets tropo step builds on, plus the OPERA CSLC download
 # helpers used by the OperaCslcSearch source and the NISAR GSLC helpers
 # used by NisarGslcSearch.
+# opera-utils extras are pinned explicitly rather than `[all]` because
+# `[all]` folds in the `geopandas` extra, which declares `pyogrio` and
+# `geopandas` as PyPI requirements. uv will then install those as wheels
+# on top of the conda-forge versions pixi has already provided, and the
+# pyogrio wheel crashes on `import pyogrio` with "Could not correctly
+# detect PROJ data files installed by pyogrio wheel" because it picks
+# up conda's PROJ_DATA dir, which doesn't match the wheel's bundled
+# PROJ layout. Listing only the extras sweets actually needs keeps
+# geopandas/pyogrio on the conda-forge side.
 opera-utils = { git = "https://github.com/scottstanie/opera-utils.git", branch = "develop-scott", extras = [
-  "all",
+  "asf",
+  "disp",
+  "nisar",
+  "tropo",
 ] }
 # scottstanie/dolphin@develop-scott carries the YamlModel commented-yaml
 # fix for Union-of-submodels JSON schema, which unblocks the
@@ -165,6 +177,14 @@ pysolid = "*"
 yamale = "*"
 lxml = "*"
 scipy = "*"
+# geopandas + pyogrio are hoisted here (rather than under the plotting
+# feature) so pixi's pypi-to-conda mapping marks them as satisfied for
+# *every* environment. Without this, any PyPI dep that declares a
+# `pyogrio` requirement (e.g. `opera-utils[geopandas]` pulled via an
+# `[all]` extra) causes uv to install a pyogrio wheel on top of conda's,
+# and the wheel crashes with a PROJ-data-dir mismatch on import.
+geopandas = "*"
+pyogrio = "*"
 
 [tool.pixi.tasks]
 test = "pytest"
@@ -186,7 +206,6 @@ mypy = "*"
 [tool.pixi.feature.plotting.dependencies]
 cartopy = "*"
 matplotlib = "*"
-geopandas = "*"
 ipywidgets = "*"
 
 # CPU (default) isce3 build - works on every platform sweets supports.

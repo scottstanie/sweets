@@ -1,129 +1,294 @@
 """Sweets command-line interface (tyro-driven).
 
-Three subcommands:
+Four subcommands:
 
-- ``sweets config``  — write a ``sweets_config.yaml`` from a few flags.
+- ``sweets config``  — write a ``sweets_config.yaml`` from CLI flags.
 - ``sweets run``     — execute a workflow from a config file.
-- ``sweets server``  — launch the (WIP) web UI server.
+- ``sweets schema``  — dump the workflow JSON schema.
+- ``sweets report``  — render an HTML report for a finished run.
 
-The CLI intentionally exposes only the most common knobs. For the long tail
-(dolphin half-window, COMPASS posting, etc.) edit the YAML directly or
-construct :class:`sweets.core.Workflow` in Python.
+``sweets config`` is a pydantic subclass of :class:`sweets.core.Workflow`,
+so every Workflow field — scalars, nested ``dolphin`` and ``tropo`` models,
+everything — is surfaced on the CLI automatically with no hand-maintained
+shadow fields. Tyro walks the pydantic schema and builds the flag layout
+from it.
+
+The one twist is ``Workflow.search``, which is a discriminated union over
+``BurstSearch | OperaCslcSearch | NisarGslcSearch``. Tyro would otherwise
+spread that across subcommand-style choices, forcing users to invoke
+``sweets config burst-search ...``. Instead, :class:`ConfigCli` hides
+``search`` from tyro with ``tyro.conf.Suppress`` and rebuilds it from a
+handful of flat, ergonomic flags (``--source``, ``--start``, ``--end``,
+``--track``, ...) in a wrap-mode validator that runs before Workflow's
+own ``_sync_aoi`` pre-validator.
+
+Every subcommand class exposes ``.execute()`` as the CLI dispatch entry
+point (rather than ``.run()``), so :class:`ConfigCli`'s entry point
+doesn't collide with :meth:`Workflow.run` inherited from the parent.
 """
 
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
 import tyro
+from pydantic import Field, model_validator
+
+from sweets.core import Source, Workflow
 
 SourceKind = Literal["safe", "opera-cslc", "nisar-gslc"]
 
 
-@dataclass
-class ConfigCmd:
-    """Create a sweets_config.yaml from CLI arguments."""
+class ConfigCli(Workflow):
+    """Create a ``sweets_config.yaml`` from CLI arguments.
 
-    start: str
-    """Start date for the burst search (YYYY-MM-DD)."""
+    Subclass of :class:`Workflow` so every Workflow field — including
+    nested ``dolphin`` and ``tropo`` — is automatically surfaced on the
+    CLI with no redeclaration. The only additions here are:
 
-    end: str
-    """End date for the burst search (YYYY-MM-DD)."""
+    - Flat source flags (``start``, ``end``, ``source``, ``track``,
+      ``frame``, ``frequency``, ``polarizations``, ``swaths``,
+      ``out_dir``) used to build ``search`` in ``_assemble_search``
+      since the discriminated-union ``search`` field is hidden from the
+      CLI.
+    - Legacy ``do_tropo`` alias for ``--tropo.enabled``.
+    - Output-file knobs ``output`` / ``with_schema`` that only control
+      where this subcommand writes its YAML (and are not part of the
+      serialized config itself).
 
-    bbox: Optional[tuple[float, float, float, float]] = None
-    """AOI as left bottom right top in decimal degrees. One of --bbox or --wkt is required."""
+    All of these flat fields are ``exclude=True``, so dumping a
+    ``ConfigCli`` via ``to_yaml`` produces a pure Workflow YAML —
+    byte-for-byte identical to what ``Workflow.to_yaml`` would write.
+    """
 
-    wkt: Optional[str] = None
-    """AOI as a WKT polygon string, or path to a .wkt file. Overrides --bbox."""
+    # Hide the discriminated-union `search` from tyro; we rebuild it
+    # from the flat source flags in `_assemble_search` below. The
+    # `type: ignore` is because we're narrowing a required field to an
+    # Optional one in the subclass. A non-empty description is required
+    # so dolphin's YAML-comment writer (which walks the full schema,
+    # including excluded fields) doesn't trip over a missing key.
+    search: Annotated[Optional[Source], tyro.conf.Suppress] = Field(  # type: ignore[assignment]
+        default=None,
+        description=(
+            "Source of input SLCs. Built by `_assemble_search` from the"
+            " flat `--source`/`--start`/`--track`/... flags; hidden from"
+            " the CLI because it's a discriminated union."
+        ),
+    )
 
-    source: SourceKind = "safe"
-    """Where the input SLCs come from. `safe` (default): raw S1 bursts via burst2safe + COMPASS. `opera-cslc`: pre-made OPERA CSLC HDF5s from ASF. `nisar-gslc`: pre-made NISAR GSLC HDF5s via CMR (L-band, UTM, already geocoded)."""
+    # Workflow declares these with `default_factory=lambda data: ...`
+    # that reads already-validated data (for `<work_dir>/dem.tif` etc.).
+    # Tyro materializes defaults at parse time before any data exists,
+    # so it can't call those factories — we override with plain
+    # `Optional[Path] = None` and the wrap validator strips them when
+    # unset so Workflow's own factory takes over downstream.
+    dem_filename: Optional[Path] = Field(  # type: ignore[assignment]
+        default=None,
+        description=(
+            "DEM raster in EPSG:4326. Defaults to `<work_dir>/dem.tif`"
+            " (downloaded via sardem)."
+        ),
+    )
+    water_mask_filename: Optional[Path] = Field(  # type: ignore[assignment]
+        default=None,
+        description=(
+            "Water mask in EPSG:4326 (uint8, 1=land, 0=water). Defaults"
+            " to `<work_dir>/watermask.tif` (derived from the DEM)."
+        ),
+    )
 
-    track: Optional[int] = None
-    """Relative orbit / track number. Required for --source safe; optional but recommended for --source opera-cslc and --source nisar-gslc. For NISAR this is the `Track` field on ASF Vertex (the RRR digits in the granule filename)."""
+    # --- Source-flat flags (folded into `search`, not dumped) ---
 
-    frame: Optional[int] = None
-    """NISAR track-frame number — the `Frame` field on ASF Vertex (the TTT digits in the granule filename, e.g. `71`). Only honored by --source nisar-gslc."""
+    start: str = Field(
+        ...,
+        description="Start date for the burst search (YYYY-MM-DD).",
+        exclude=True,
+    )
+    end: str = Field(
+        ...,
+        description="End date for the burst search (YYYY-MM-DD).",
+        exclude=True,
+    )
+    source: SourceKind = Field(
+        default="safe",
+        description=(
+            "Where the input SLCs come from. `safe` (default): raw S1"
+            " bursts via burst2safe + COMPASS. `opera-cslc`: pre-made"
+            " OPERA CSLC HDF5s from ASF. `nisar-gslc`: pre-made NISAR"
+            " GSLC HDF5s via CMR (L-band, UTM, already geocoded)."
+        ),
+        exclude=True,
+    )
+    track: Optional[int] = Field(
+        default=None,
+        description=(
+            "Relative orbit / track number. Required for --source safe;"
+            " optional but recommended for opera-cslc and nisar-gslc."
+            " For NISAR this is the `Track` field on ASF Vertex (the"
+            " RRR digits in the granule filename)."
+        ),
+        exclude=True,
+    )
+    frame: Optional[int] = Field(
+        default=None,
+        description=(
+            "NISAR track-frame number — the `Frame` field on ASF Vertex"
+            " (the TTT digits in the granule filename, e.g. `71`). Only"
+            " honored by --source nisar-gslc."
+        ),
+        exclude=True,
+    )
+    frequency: Literal["A", "B"] = Field(
+        default="A",
+        description=(
+            "NISAR frequency band (`A` = L-band, `B` reserved). Only"
+            " honored by --source nisar-gslc."
+        ),
+        exclude=True,
+    )
+    polarizations: list[str] = Field(
+        default_factory=lambda: ["VV"],
+        description=(
+            "Polarizations to keep. Defaults to ['VV'] for S1/OPERA;"
+            " pass --polarizations HH for NISAR."
+        ),
+        exclude=True,
+    )
+    swaths: Optional[list[str]] = Field(
+        default=None,
+        description=(
+            "Restrict to specific subswaths (e.g. ['IW2']). Only"
+            " honored by --source safe."
+        ),
+        exclude=True,
+    )
+    out_dir: Path = Field(
+        default_factory=lambda: Path("data"),
+        description="Where downloaded SLC inputs will live.",
+        exclude=True,
+    )
 
-    frequency: Literal["A", "B"] = "A"
-    """NISAR frequency band (`A` = L-band, `B` reserved). Only honored by --source nisar-gslc."""
+    do_tropo: bool = Field(
+        default=False,
+        description=(
+            "Alias for `--tropo.enabled`. Kept for backwards"
+            " compatibility with pre-refactor README/docs."
+        ),
+        exclude=True,
+    )
 
-    out_dir: Path = field(default_factory=lambda: Path("data"))
-    """Where downloaded SLC inputs will live."""
+    # --- CLI-only output knobs (not serialized) ---
 
-    work_dir: Path = field(default_factory=Path.cwd)
-    """Top-level working directory for the workflow."""
+    output: Path = Field(
+        default=Path("sweets_config.yaml"),
+        description="Where to write the config file.",
+        exclude=True,
+    )
+    with_schema: bool = Field(
+        default=True,
+        description=(
+            "Also write a sibling `<output>.schema.json` and prepend a"
+            " `# yaml-language-server: $schema=...` modeline. Editors"
+            " with the YAML Language Server (VS Code, Neovim-yamlls,"
+            " JetBrains, etc.) use that for inline hover docs,"
+            " autocomplete, and validation. Pass --no-with-schema to"
+            " skip."
+        ),
+        exclude=True,
+    )
 
-    polarizations: list[str] = field(default_factory=lambda: ["VV"])
-    """Polarizations to keep. Defaults to ['VV'] for S1/OPERA; pass --polarizations HH for NISAR."""
+    @model_validator(mode="wrap")
+    @classmethod
+    def _assemble_search(cls, data: Any, handler: Any) -> Any:
+        """Build ``search`` from the flat source flags before the rest of validation.
 
-    swaths: Optional[list[str]] = None
-    """Restrict to specific subswaths (e.g. ['IW2']). Only honored by --source safe."""
+        ``mode="wrap"`` runs around the entire validation pipeline, so
+        the input dict is mutated before Workflow's mode="before"
+        ``_sync_aoi`` validator sees it. That matters because
+        ``_sync_aoi`` would crash on a missing / None ``search`` value;
+        we need it to receive a fully-formed dict that encodes the flat
+        CLI flags.
 
-    n_workers: int = 4
-    """Process pool size for COMPASS geocoding (--source safe only)."""
+        The flat-flag path only triggers when the caller provided one
+        of ``start`` / ``source`` (i.e. it's a CLI instantiation).
+        Loading a serialized YAML via ``from_yaml`` passes ``search``
+        directly and skips this branch entirely.
+        """
+        if isinstance(data, dict) and ("start" in data or "source" in data):
+            data = dict(data)
+            src = data.get("source", "safe")
+            search: dict[str, Any] = {
+                "kind": src,
+                "start": data.get("start", ""),
+                "end": data.get("end", ""),
+                "out_dir": data.get("out_dir", Path("data")),
+            }
+            if src == "safe":
+                if data.get("track") is None:
+                    msg = "--track is required for --source safe"
+                    raise ValueError(msg)
+                search["track"] = data["track"]
+                search["polarizations"] = data.get("polarizations", ["VV"])
+                if data.get("swaths") is not None:
+                    search["swaths"] = data["swaths"]
+            elif src == "opera-cslc":
+                if data.get("track") is not None:
+                    search["track"] = data["track"]
+            elif src == "nisar-gslc":
+                if data.get("track") is not None:
+                    search["track"] = data["track"]
+                if data.get("frame") is not None:
+                    search["frame"] = data["frame"]
+                search["frequency"] = data.get("frequency", "A")
+                search["polarizations"] = data.get("polarizations", ["VV"])
+            data["search"] = search
 
-    do_tropo: bool = False
-    """Run the OPERA L4 TROPO-ZENITH correction step after dolphin (off by default; not supported with --source nisar-gslc)."""
+            if data.get("do_tropo"):
+                tropo_obj: Any = data.get("tropo")
+                dump = getattr(tropo_obj, "model_dump", None)
+                if callable(dump):
+                    tropo_dict: dict[str, Any] = dump()
+                elif tropo_obj is None:
+                    tropo_dict = {}
+                else:
+                    tropo_dict = dict(tropo_obj)
+                tropo_dict["enabled"] = True
+                data["tropo"] = tropo_dict
 
-    output: Path = Path("sweets_config.yaml")
-    """Where to write the config file."""
+            # Strip CLI-only None overrides for fields whose Workflow
+            # default_factory builds a `<work_dir>/...` path — leaving
+            # them as None would override Workflow's factory with None.
+            for key in ("dem_filename", "water_mask_filename"):
+                if data.get(key) is None:
+                    data.pop(key, None)
 
-    with_schema: bool = True
-    """Also write a sibling `<output>.schema.json` next to the YAML and
-    prepend a `# yaml-language-server: $schema=...` modeline. Editors
-    with the YAML Language Server (VS Code, Neovim-yamlls, JetBrains,
-    etc.) use that to provide inline hover docs, autocomplete, and
-    validation for every field in the sweets config. Pass
-    --no-with-schema to skip."""
+        return handler(data)
 
-    def run(self) -> None:
-        """Build and dump a Workflow config to YAML."""
-        # Heavy imports go here so `sweets --help` is snappy.
-        from sweets.core import Workflow
+    def execute(self) -> None:
+        """Write the config YAML (and, optionally, its schema sidecar).
 
+        Serializes via a fresh :class:`Workflow` instance rather than
+        dumping ``self`` directly. That matters because ConfigCli
+        overrides ``dem_filename`` / ``water_mask_filename`` as
+        ``Optional[Path] = None`` (tyro can't materialize Workflow's
+        own ``default_factory=lambda data: ...`` at parse time), so
+        dumping ``self`` would serialize ``null`` for those fields and
+        a later ``Workflow.from_yaml`` would reject them. Stripping the
+        None values and going through ``Workflow.model_validate`` lets
+        Workflow's own defaults produce concrete ``<work_dir>/...``
+        paths in the YAML.
+        """
         if self.bbox is None and self.wkt is None:
             print("error: one of --bbox or --wkt is required", file=sys.stderr)
             raise SystemExit(2)
-
-        search: dict = {
-            "kind": self.source,
-            "start": self.start,
-            "end": self.end,
-            "out_dir": self.out_dir,
-        }
-        if self.source == "safe":
-            if self.track is None:
-                print("error: --track is required for --source safe", file=sys.stderr)
-                raise SystemExit(2)
-            search["track"] = self.track
-            search["polarizations"] = self.polarizations
-            search["swaths"] = self.swaths
-        elif self.source == "opera-cslc":
-            # `track` is optional on OPERA — ASF will filter on AOI alone.
-            if self.track is not None:
-                search["track"] = self.track
-        elif self.source == "nisar-gslc":
-            if self.track is not None:
-                search["track"] = self.track
-            if self.frame is not None:
-                search["frame"] = self.frame
-            search["frequency"] = self.frequency
-            search["polarizations"] = self.polarizations
-
-        workflow = Workflow.model_validate(
-            {
-                "bbox": self.bbox,
-                "wkt": self.wkt,
-                "work_dir": self.work_dir,
-                "n_workers": self.n_workers,
-                "search": search,
-                "tropo": {"enabled": self.do_tropo},
-            }
-        )
+        payload = self.model_dump(by_alias=True)
+        for key in ("dem_filename", "water_mask_filename"):
+            if payload.get(key) is None:
+                payload.pop(key, None)
+        workflow = Workflow.model_validate(payload)
         workflow.to_yaml(self.output)
         if self.with_schema:
             _emit_schema_sidecar(self.output)
@@ -133,16 +298,14 @@ class ConfigCmd:
 def _emit_schema_sidecar(yaml_path: Path) -> None:
     """Write a JSON schema next to the YAML and add a modeline comment.
 
-    The schema is `Workflow.model_json_schema()` emitted verbatim; pydantic
-    produces JSON Schema Draft 2020-12 with a `oneOf + discriminator` for
-    the `Workflow.search` field, which the YAML Language Server handles
-    natively. The modeline is read by the redhat.vscode-yaml extension
-    (and every editor that speaks yamlls) to attach the schema at load
-    time.
+    The schema is ``Workflow.model_json_schema()`` emitted verbatim;
+    pydantic produces JSON Schema Draft 2020-12 with a ``oneOf +
+    discriminator`` for the ``Workflow.search`` field, which the YAML
+    Language Server handles natively. The modeline is read by the
+    redhat.vscode-yaml extension (and every editor that speaks yamlls)
+    to attach the schema at load time.
     """
     import json
-
-    from sweets.core import Workflow
 
     schema_path = yaml_path.with_suffix(yaml_path.suffix + ".schema.json")
     schema_path.write_text(json.dumps(Workflow.model_json_schema(), indent=2) + "\n")
@@ -158,10 +321,8 @@ def _emit_schema_sidecar(yaml_path: Path) -> None:
 class SchemaCmd:
     """Dump the JSON schema for the sweets workflow config to stdout."""
 
-    def run(self) -> None:
+    def execute(self) -> None:
         import json
-
-        from sweets.core import Workflow
 
         print(json.dumps(Workflow.model_json_schema(), indent=2))
 
@@ -178,7 +339,7 @@ class ReportCmd:
     output: Optional[Path] = None
     """Where to write the report. Defaults to `<work_dir>/sweets_report.html`."""
 
-    def run(self) -> None:
+    def execute(self) -> None:
         from sweets._report import build_report
 
         path = build_report(
@@ -198,10 +359,8 @@ class RunCmd:
     starting_step: int = 1
     """Skip earlier stages (1=download, 2=geocode, 3=dolphin)."""
 
-    def run(self) -> None:
+    def execute(self) -> None:
         """Load the workflow and run it."""
-        from sweets.core import Workflow
-
         if not self.config_file.exists():
             msg = f"config file {self.config_file} does not exist"
             raise SystemExit(msg)
@@ -213,7 +372,7 @@ def main() -> None:
     """Top-level CLI entry point."""
     cmd = tyro.extras.subcommand_cli_from_dict(
         {
-            "config": ConfigCmd,
+            "config": ConfigCli,
             "run": RunCmd,
             "schema": SchemaCmd,
             "report": ReportCmd,
@@ -221,7 +380,7 @@ def main() -> None:
         prog="sweets",
         description="Sentinel-1 InSAR workflow runner.",
     )
-    cmd.run()
+    cmd.execute()
 
 
 if __name__ == "__main__":

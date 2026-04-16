@@ -33,7 +33,12 @@ from sweets._dolphin import DolphinOptions
 from sweets._tropo import TropoOptions
 from sweets.cli import ConfigCli
 from sweets.core import Workflow
-from sweets.download import BurstSearch, NisarGslcSearch, OperaCslcSearch
+from sweets.download import (
+    BurstSearch,
+    LocalSafeSearch,
+    NisarGslcSearch,
+    OperaCslcSearch,
+)
 
 
 @pytest.fixture
@@ -120,6 +125,28 @@ class TestAssembleSearch:
         assert cfg.search.frame == 71
         assert cfg.search.frequency == "A"
         assert cfg.search.polarizations == ["HH"]
+
+    def test_local_source_skips_dates_and_track(self, tmp_path, bbox):
+        """`--source local` should produce a LocalSafeSearch with no date pins."""
+        cfg = ConfigCli(
+            source="local",
+            bbox=bbox,
+            work_dir=tmp_path,
+            out_dir=tmp_path / "data",
+        )
+        assert isinstance(cfg.search, LocalSafeSearch)
+        assert cfg.search.kind == "local"
+        assert cfg.search.out_dir == (tmp_path / "data").resolve()
+
+    def test_non_local_source_requires_dates(self, tmp_path, bbox):
+        with pytest.raises(ValidationError, match="--start and --end are required"):
+            ConfigCli(
+                source="safe",
+                track=78,
+                bbox=bbox,
+                work_dir=tmp_path,
+                out_dir=tmp_path / "data",
+            )
 
     def test_safe_requires_track(self, tmp_path, bbox):
         with pytest.raises(

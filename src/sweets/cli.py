@@ -39,7 +39,7 @@ from pydantic import Field, model_validator
 
 from sweets.core import Source, Workflow
 
-SourceKind = Literal["safe", "opera-cslc", "nisar-gslc"]
+SourceKind = Literal["safe", "local", "opera-cslc", "nisar-gslc"]
 
 
 class ConfigCli(Workflow):
@@ -102,23 +102,32 @@ class ConfigCli(Workflow):
 
     # --- Source-flat flags (folded into `search`, not dumped) ---
 
-    start: str = Field(
-        ...,
-        description="Start date for the burst search (YYYY-MM-DD).",
+    start: Optional[str] = Field(
+        default=None,
+        description=(
+            "Start date for the search (YYYY-MM-DD). Required for `safe`,"
+            " `opera-cslc`, `nisar-gslc`; ignored for `local` (which uses"
+            " whatever files already exist in --out-dir)."
+        ),
         exclude=True,
     )
-    end: str = Field(
-        ...,
-        description="End date for the burst search (YYYY-MM-DD).",
+    end: Optional[str] = Field(
+        default=None,
+        description=(
+            "End date for the search (YYYY-MM-DD). Required for `safe`,"
+            " `opera-cslc`, `nisar-gslc`; ignored for `local`."
+        ),
         exclude=True,
     )
     source: SourceKind = Field(
         default="safe",
         description=(
             "Where the input SLCs come from. `safe` (default): raw S1"
-            " bursts via burst2safe + COMPASS. `opera-cslc`: pre-made"
-            " OPERA CSLC HDF5s from ASF. `nisar-gslc`: pre-made NISAR"
-            " GSLC HDF5s via CMR (L-band, UTM, already geocoded)."
+            " bursts via burst2safe + COMPASS. `local`: pre-downloaded"
+            " full-frame S1 SAFE dirs / zips in --out-dir + COMPASS."
+            " `opera-cslc`: pre-made OPERA CSLC HDF5s from ASF."
+            " `nisar-gslc`: pre-made NISAR GSLC HDF5s via CMR (L-band,"
+            " UTM, already geocoded)."
         ),
         exclude=True,
     )
@@ -222,10 +231,17 @@ class ConfigCli(Workflow):
             src = data.get("source", "safe")
             search: dict[str, Any] = {
                 "kind": src,
-                "start": data.get("start", ""),
-                "end": data.get("end", ""),
                 "out_dir": data.get("out_dir", Path("data")),
             }
+            if src == "local":
+                # LocalSafeSearch has no dates; files already on disk.
+                pass
+            else:
+                if data.get("start") is None or data.get("end") is None:
+                    msg = f"--start and --end are required for --source {src}"
+                    raise ValueError(msg)
+                search["start"] = data["start"]
+                search["end"] = data["end"]
             if src == "safe":
                 if data.get("track") is None:
                     msg = "--track is required for --source safe"

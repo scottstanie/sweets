@@ -40,7 +40,7 @@ from ._orbit import download_orbits
 from ._tropo import TropoOptions, run_tropo_correction
 from ._types import Filename
 from .dem import create_dem, create_water_mask
-from .download import BurstSearch, NisarGslcSearch, OperaCslcSearch
+from .download import BurstSearch, LocalSafeSearch, NisarGslcSearch, OperaCslcSearch
 
 if TYPE_CHECKING:
     from dolphin.workflows.displacement import OutputPaths
@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 # the matching variant — much cleaner errors than a plain Union, which
 # tries each variant in order and reports failures from all of them.
 Source = Annotated[
-    Union[BurstSearch, OperaCslcSearch, NisarGslcSearch],
+    Union[BurstSearch, LocalSafeSearch, OperaCslcSearch, NisarGslcSearch],
     Field(discriminator="kind"),
 ]
 
@@ -78,9 +78,11 @@ class Workflow(YamlModel):
     search: Source = Field(
         ...,
         description=(
-            "Source of input SLCs. Either a `BurstSearch` (raw S1 bursts via"
-            " burst2safe + COMPASS) or an `OperaCslcSearch` (pre-made OPERA"
-            " CSLCs); discriminated by the `kind` field."
+            "Source of input SLCs. One of `BurstSearch` (raw S1 bursts via"
+            " burst2safe + COMPASS), `LocalSafeSearch` (pre-downloaded full-"
+            "frame SAFE dirs / zips + COMPASS), `OperaCslcSearch` (pre-made"
+            " OPERA CSLCs), or `NisarGslcSearch` (pre-made NISAR GSLCs);"
+            " discriminated by the `kind` field."
         ),
     )
 
@@ -198,10 +200,10 @@ class Workflow(YamlModel):
         """Push the top-level bbox/wkt down into the search source.
 
         The outer ``Workflow.bbox`` / ``Workflow.wkt`` are the canonical AOI;
-        the nested ``search`` field (either BurstSearch or OperaCslcSearch)
-        gets the same bbox so the downloader knows what to fetch. Only
-        ``bbox`` is forced — ``search.wkt`` is left alone so non-rectangular
-        search polygons can be specified at the source level if a user wants.
+        the nested ``search`` field gets the same bbox so the downloader (or
+        local-source consumer) knows what to fetch / crop to. Only ``bbox``
+        is forced — ``search.wkt`` is left alone so non-rectangular search
+        polygons can be specified at the source level if a user wants.
 
         If ``search`` is provided as a dict without ``kind``, default to
         ``"safe"`` for backwards compatibility with existing configs.
@@ -211,7 +213,8 @@ class Workflow(YamlModel):
         if "search" not in values:
             values["search"] = {}
         elif isinstance(
-            values["search"], (BurstSearch, OperaCslcSearch, NisarGslcSearch)
+            values["search"],
+            (BurstSearch, LocalSafeSearch, OperaCslcSearch, NisarGslcSearch),
         ):
             values["search"] = values["search"].model_dump(
                 exclude_unset=True, by_alias=True
@@ -282,13 +285,14 @@ class Workflow(YamlModel):
         return self.work_dir / "dolphin"
 
     # Buffer (deg) padded around `bbox` when deriving an implicit DEM / water-
-    # mask extent. The BurstSearch value is large enough to cover the full
+    # mask extent. The COMPASS value is large enough to cover the full
     # footprint of any IW burst (~20 x 85 km) regardless of where within the
     # burst the study area sits; COMPASS geocoding needs DEM coverage for the
-    # whole burst, not just the crop area. All other sources consume the DEM
-    # only for water masking + tropo context, so the study area + a small
-    # buffer is plenty.
-    _DEM_BUFFER_DEG_BURST = 1.0
+    # whole burst, not just the crop area. Applies to both BurstSearch and
+    # LocalSafeSearch (full-frame SAFEs are larger still, so the same buffer
+    # is still safe). All other sources consume the DEM only for water
+    # masking + tropo context, so the study area + a small buffer is plenty.
+    _DEM_BUFFER_DEG_COMPASS = 1.0
     _DEM_BUFFER_DEG_DEFAULT = 0.25
 
     def _pad_bbox(
@@ -305,17 +309,18 @@ class Workflow(YamlModel):
     def _dem_bbox(self) -> tuple[float, float, float, float]:
         """Bbox passed to ``sardem`` when creating the DEM.
 
-        Priority: user-set ``dem_bbox`` > BurstSearch default (~1 deg buffer)
-        > everything-else default (~0.25 deg buffer). COMPASS needs DEM
-        coverage for the full IW burst extent, not just the study area, so
-        the BurstSearch buffer has to be big enough to absorb a whole burst.
+        Priority: user-set ``dem_bbox`` > COMPASS-path default (~1 deg
+        buffer for BurstSearch / LocalSafeSearch) > everything-else default
+        (~0.25 deg buffer). COMPASS needs DEM coverage for the full IW
+        burst extent, not just the study area, so the buffer on the raw-
+        SAFE path has to be big enough to absorb a whole burst.
         """
         if self.dem_bbox is not None:
             return self.dem_bbox
         assert self.bbox is not None
         buf = (
-            self._DEM_BUFFER_DEG_BURST
-            if isinstance(self.search, BurstSearch)
+            self._DEM_BUFFER_DEG_COMPASS
+            if isinstance(self.search, (BurstSearch, LocalSafeSearch))
             else self._DEM_BUFFER_DEG_DEFAULT
         )
         return self._pad_bbox(self.bbox, buf)
@@ -351,9 +356,9 @@ class Workflow(YamlModel):
     # ------------------------------------------------------------------
 
     def _existing_safes(self) -> list[Path]:
-        # Only meaningful for the BurstSearch path; OperaCslcSearch doesn't
-        # produce SAFE directories.
-        assert isinstance(self.search, BurstSearch)
+        # Only meaningful for the COMPASS path (BurstSearch or LocalSafeSearch).
+        # OperaCslcSearch / NisarGslcSearch deliver pre-geocoded HDF5s.
+        assert isinstance(self.search, (BurstSearch, LocalSafeSearch))
         return self.search.existing_safes()
 
     # COMPASS-written CSLC HDF5s are tens to hundreds of MB. A 6-KB shell is
@@ -531,7 +536,24 @@ class Workflow(YamlModel):
                 return existing
             return self.search.download()
 
-        existing = self._existing_safes()
+        if isinstance(self.search, LocalSafeSearch):
+            existing = self.search.existing_safes()
+            if not existing:
+                msg = (
+                    f"LocalSafeSearch.out_dir={self.search.out_dir} has no"
+                    " S1 SAFE directories or zip archives; nothing to"
+                    " geocode."
+                )
+                raise RuntimeError(msg)
+            logger.info(self.search.summary())
+            logger.info(
+                f"LocalSafeSearch: using {len(existing)} pre-downloaded"
+                f" input(s) from {self.search.out_dir}."
+            )
+            return existing
+
+        assert isinstance(self.search, BurstSearch)
+        existing = self.search.existing_safes()
         if existing and not self.overwrite:
             logger.info(
                 f"Found {len(existing)} existing SAFE dirs in"
@@ -545,6 +567,11 @@ class Workflow(YamlModel):
         self, safes: list[Path], dem_file: Path, burst_db_file: Path
     ) -> tuple[list[Path], list[Path]]:
         self.log_dir.mkdir(parents=True, exist_ok=True)
+        using_zipped = (
+            self.search.resolve_using_zipped()
+            if isinstance(self.search, LocalSafeSearch)
+            else False
+        )
         compass_cfg_files = create_config_files(
             slc_dir=safes[0].parent,
             burst_db_file=burst_db_file,
@@ -556,7 +583,7 @@ class Workflow(YamlModel):
             pol_type=self.pol_type,
             out_dir=self.gslc_dir,
             overwrite=self.overwrite,
-            using_zipped=False,
+            using_zipped=using_zipped,
             gpu_enabled=self.gpu_enabled,
         )
 
@@ -680,10 +707,10 @@ class Workflow(YamlModel):
         self.work_dir.mkdir(parents=True, exist_ok=True)
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
-        is_safe = isinstance(self.search, BurstSearch)
+        is_safe = isinstance(self.search, (BurstSearch, LocalSafeSearch))
         is_nisar = isinstance(self.search, NisarGslcSearch)
-        # COMPASS is only needed for the raw-SAFE path. OPERA and NISAR both
-        # deliver pre-geocoded HDF5s.
+        # COMPASS is only needed for the raw-SAFE path (BurstSearch or
+        # LocalSafeSearch). OPERA and NISAR both deliver pre-geocoded HDF5s.
         needs_compass = is_safe
 
         # ---- Step 1: download (DEM, water mask, burst DB, source SLCs) ----

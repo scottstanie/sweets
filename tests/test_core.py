@@ -224,7 +224,7 @@ class TestLocalSafeSearch:
             LocalSafeSearch(out_dir=tmp_path)
 
     def test_existing_safes_prefers_safe_over_zip(self, tmp_path, bbox):
-        """When both .SAFE and .zip exist, .SAFE wins; using_zipped -> False."""
+        """When both .SAFE and .zip are in `out_dir`, .SAFE wins."""
         safe = tmp_path / "S1A_IW_SLC__1SDV_20230101T000000.SAFE"
         safe.mkdir()
         zipf = tmp_path / "S1A_IW_SLC__1SDV_20230101T000000.zip"
@@ -232,31 +232,18 @@ class TestLocalSafeSearch:
 
         src = LocalSafeSearch(out_dir=tmp_path, bbox=bbox)
         assert src.existing_safes() == [safe]
-        assert src.resolve_using_zipped() is False
 
-    def test_existing_safes_autodetects_zip(self, tmp_path, bbox):
-        """With only .zip files present, using_zipped -> True."""
+    def test_existing_safes_picks_up_zip(self, tmp_path, bbox):
+        """With only .zip files present, those are returned."""
         zipf = tmp_path / "S1A_IW_SLC__1SDV_20230101T000000.zip"
         zipf.write_bytes(b"")
 
         src = LocalSafeSearch(out_dir=tmp_path, bbox=bbox)
         assert src.existing_safes() == [zipf]
-        assert src.resolve_using_zipped() is True
 
-    def test_using_zipped_override(self, tmp_path, bbox):
-        safe = tmp_path / "S1A_IW_SLC__1SDV_20230101T000000.SAFE"
-        safe.mkdir()
-        zipf = tmp_path / "S1A_IW_SLC__1SDV_20230101T000000.zip"
-        zipf.write_bytes(b"")
-
-        src = LocalSafeSearch(out_dir=tmp_path, bbox=bbox, using_zipped=True)
-        assert src.existing_safes() == [zipf]
-        assert src.resolve_using_zipped() is True
-
-    def test_resolve_using_zipped_empty_dir_raises(self, tmp_path, bbox):
+    def test_existing_safes_empty_dir(self, tmp_path, bbox):
         src = LocalSafeSearch(out_dir=tmp_path, bbox=bbox)
-        with pytest.raises(RuntimeError, match="no.*SAFE.*zip"):
-            src.resolve_using_zipped()
+        assert src.existing_safes() == []
 
 
 class TestWorkflowLocal:

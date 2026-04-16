@@ -290,8 +290,9 @@ class LocalSafeSearch(YamlModel):
     (e.g. fetched directly from ASF Vertex, copied off another machine,
     etc.) and wants sweets to skip the download step and feed the files
     straight into COMPASS. Both unzipped ``.SAFE`` directories and zipped
-    ``.zip`` archives are accepted: COMPASS / s1-reader can geocode either,
-    selected by the ``using_zipped`` flag below.
+    ``.zip`` archives are accepted; sweets inspects :attr:`out_dir` and
+    picks whichever format is present (preferring ``.SAFE`` when both
+    are, which is the faster path for COMPASS / s1-reader).
 
     No date range is required — sweets uses whatever's in :attr:`out_dir`
     as-is. Provide :attr:`bbox` (or :attr:`wkt`) so the AOI can be cropped
@@ -322,14 +323,6 @@ class LocalSafeSearch(YamlModel):
         description=(
             "Area of interest as a WKT polygon string (or path to a `.wkt` file)."
             " Takes precedence over `bbox` if both are provided."
-        ),
-    )
-    using_zipped: Optional[bool] = Field(
-        None,
-        description=(
-            "Force ``.zip`` (True) or ``.SAFE`` (False) input mode for COMPASS."
-            " If left as the default (None), sweets auto-detects: ``.SAFE``"
-            " directories take precedence when both are present in `out_dir`."
         ),
     )
 
@@ -372,51 +365,26 @@ class LocalSafeSearch(YamlModel):
         return box(*self.bbox)
 
     def existing_safes(self) -> list[Path]:
-        """Return ``.SAFE`` dirs in `out_dir` (or ``.zip`` files if no SAFEs).
+        """Return ``.SAFE`` dirs in `out_dir`, or ``.zip`` files if no SAFEs.
 
         ``.SAFE`` directories are preferred when both formats are present
-        — COMPASS reads them slightly faster than zips and many users
-        accumulate both formats over time. The :attr:`using_zipped`
-        override forces one or the other.
+        — COMPASS reads them slightly faster than zips and both formats in
+        the same directory typically have matching stems (e.g. leftovers
+        from an earlier unzip), so picking the zip in that case would just
+        re-read the same product.
         """
         safes = sorted(self.out_dir.glob("S1[AB]_*.SAFE"))
-        zips = sorted(self.out_dir.glob("S1[AB]_*.zip"))
-        if self.using_zipped is True:
-            return zips
-        if self.using_zipped is False:
-            return safes
-        return safes if safes else zips
-
-    def resolve_using_zipped(self) -> bool:
-        """Return the effective `using_zipped` flag for COMPASS.
-
-        Honors :attr:`using_zipped` when set; otherwise picks ``False``
-        whenever any ``.SAFE`` directory is on disk and ``True`` when
-        only ``.zip`` archives are present. Raises if `out_dir` has
-        neither — there's nothing for COMPASS to consume.
-        """
-        if self.using_zipped is not None:
-            return self.using_zipped
-        safes = list(self.out_dir.glob("S1[AB]_*.SAFE"))
         if safes:
-            return False
-        zips = list(self.out_dir.glob("S1[AB]_*.zip"))
-        if zips:
-            return True
-        msg = (
-            f"LocalSafeSearch.out_dir={self.out_dir} contains no"
-            " `S1[AB]_*.SAFE` directories or `S1[AB]_*.zip` archives."
-        )
-        raise RuntimeError(msg)
+            return safes
+        return sorted(self.out_dir.glob("S1[AB]_*.zip"))
 
     def summary(self) -> str:
         """Return a human-readable summary of the configured source."""
         bounds = self.aoi.bounds
         return (
             "LocalSafeSearch:\n"
-            f"  AOI bounds   : {bounds}\n"
-            f"  Source dir   : {self.out_dir}\n"
-            f"  using_zipped : {self.using_zipped if self.using_zipped is not None else 'auto'}"
+            f"  AOI bounds : {bounds}\n"
+            f"  Source dir : {self.out_dir}"
         )
 
 

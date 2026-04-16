@@ -567,11 +567,10 @@ class Workflow(YamlModel):
         self, safes: list[Path], dem_file: Path, burst_db_file: Path
     ) -> tuple[list[Path], list[Path]]:
         self.log_dir.mkdir(parents=True, exist_ok=True)
-        using_zipped = (
-            self.search.resolve_using_zipped()
-            if isinstance(self.search, LocalSafeSearch)
-            else False
-        )
+        # COMPASS globs for either `*.zip` or `*.SAFE` based on this flag,
+        # so infer it from what's actually on disk rather than making the
+        # user declare it. BurstSearch always produces `.SAFE` directories.
+        using_zipped = safes[0].suffix == ".zip"
         compass_cfg_files = create_config_files(
             slc_dir=safes[0].parent,
             burst_db_file=burst_db_file,

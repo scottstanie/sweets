@@ -11,7 +11,12 @@ from pathlib import Path
 import pytest
 
 from sweets.core import Workflow
-from sweets.download import BurstSearch, NisarGslcSearch, OperaCslcSearch
+from sweets.download import (
+    BurstSearch,
+    LocalSafeSearch,
+    NisarGslcSearch,
+    OperaCslcSearch,
+)
 
 
 @pytest.fixture
@@ -203,3 +208,86 @@ class TestWorkflow:
         assert isinstance(w.search, NisarGslcSearch)
         assert w.search.track == 13
         assert w.search.frame == 71
+
+
+class TestLocalSafeSearch:
+    """LocalSafeSearch: pre-downloaded .SAFE dirs / .zip archives, no download."""
+
+    def test_kind_and_bbox(self, tmp_path, bbox):
+        src = LocalSafeSearch(out_dir=tmp_path, bbox=bbox)
+        assert src.kind == "local"
+        assert src.out_dir == tmp_path.resolve()
+        assert src.aoi.bounds == bbox
+
+    def test_requires_aoi(self, tmp_path):
+        with pytest.raises(ValueError, match="bbox.*wkt"):
+            LocalSafeSearch(out_dir=tmp_path)
+
+    def test_existing_safes_prefers_safe_over_zip(self, tmp_path, bbox):
+        """When both .SAFE and .zip are in `out_dir`, .SAFE wins."""
+        safe = tmp_path / "S1A_IW_SLC__1SDV_20230101T000000.SAFE"
+        safe.mkdir()
+        zipf = tmp_path / "S1A_IW_SLC__1SDV_20230101T000000.zip"
+        zipf.write_bytes(b"")
+
+        src = LocalSafeSearch(out_dir=tmp_path, bbox=bbox)
+        assert src.existing_safes() == [safe]
+
+    def test_existing_safes_picks_up_zip(self, tmp_path, bbox):
+        """With only .zip files present, those are returned."""
+        zipf = tmp_path / "S1A_IW_SLC__1SDV_20230101T000000.zip"
+        zipf.write_bytes(b"")
+
+        src = LocalSafeSearch(out_dir=tmp_path, bbox=bbox)
+        assert src.existing_safes() == [zipf]
+
+    def test_existing_safes_empty_dir(self, tmp_path, bbox):
+        src = LocalSafeSearch(out_dir=tmp_path, bbox=bbox)
+        assert src.existing_safes() == []
+
+
+class TestWorkflowLocal:
+    """Workflow integration for the LocalSafeSearch source."""
+
+    def test_local_kind_via_workflow(self, tmp_path, bbox):
+        w = Workflow.model_validate(
+            {
+                "bbox": bbox,
+                "search": {"kind": "local", "out_dir": str(tmp_path)},
+            }
+        )
+        assert isinstance(w.search, LocalSafeSearch)
+        assert w.search.kind == "local"
+        assert w.search.bbox == bbox
+
+    def test_local_yaml_roundtrip(self, tmp_path, bbox):
+        data_dir = tmp_path / "safes"
+        data_dir.mkdir()
+        w = Workflow.model_validate(
+            {
+                "bbox": bbox,
+                "search": {"kind": "local", "out_dir": str(data_dir)},
+            }
+        )
+        out = tmp_path / "config.yaml"
+        w.to_yaml(out, with_comments=True)
+        w2 = Workflow.from_yaml(out)
+        assert isinstance(w2.search, LocalSafeSearch)
+        assert w2.search.out_dir == data_dir.resolve()
+        assert w2.search.bbox == bbox
+
+    def test_local_uses_compass_dem_buffer(self, tmp_path, bbox):
+        """LocalSafeSearch should get the wide COMPASS DEM buffer (not the 0.25 deg default)."""
+        w = Workflow.model_validate(
+            {
+                "bbox": bbox,
+                "search": {"kind": "local", "out_dir": str(tmp_path)},
+            }
+        )
+        # 1.0 deg buffer — full IW frame fits.
+        assert w._dem_bbox == (
+            bbox[0] - 1.0,
+            bbox[1] - 1.0,
+            bbox[2] + 1.0,
+            bbox[3] + 1.0,
+        )

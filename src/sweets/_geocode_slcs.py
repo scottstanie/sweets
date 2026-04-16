@@ -8,6 +8,7 @@ from typing import List, Literal, Optional, Tuple
 import compass.s1_geocode_slc
 import compass.s1_static_layers
 import journal
+import yaml  # type: ignore[import-untyped]
 from compass import s1_geocode_stack
 from compass.utils.geo_runconfig import GeoRunConfig
 
@@ -110,6 +111,8 @@ def create_config_files(
     out_dir: Filename = Path("gslcs"),
     overwrite: bool = False,
     using_zipped: bool = False,
+    gpu_enabled: bool = True,
+    gpu_id: int = 0,
 ) -> List[Path]:
     """Create the geocoding config files for a stack of SLCs.
 
@@ -141,6 +144,16 @@ def create_config_files(
     using_zipped : bool, optional
         If true, will search for. zip files instead of unzipped .SAFE directories.
         By default False.
+    gpu_enabled : bool, optional
+        Set ``runconfig.groups.worker.gpu_enabled`` in each emitted
+        COMPASS runconfig. ``s1_geocode_stack.run`` does not expose this,
+        so sweets patches the dumped YAMLs in-place after they are
+        written. Harmless on CPU-only isce3 builds — COMPASS routes the
+        flag through ``isce3.core.gpu_check.use_gpu`` which falls back
+        to CPU when ``isce3.cuda`` is not importable. Defaults to True.
+    gpu_id : int, optional
+        Index of the CUDA device for COMPASS to use when
+        ``gpu_enabled=True``. Ignored otherwise. Defaults to 0.
 
     Returns
     -------
@@ -170,4 +183,27 @@ def create_config_files(
         y_spac=y_posting,
         using_zipped=using_zipped,
     )
-    return sorted((Path(out_dir) / "runconfigs").glob("*"))
+    written = sorted((Path(out_dir) / "runconfigs").glob("*"))
+    _patch_worker_settings(written, gpu_enabled=gpu_enabled, gpu_id=gpu_id)
+    return written
+
+
+def _patch_worker_settings(
+    runconfig_files: List[Path], *, gpu_enabled: bool, gpu_id: int
+) -> None:
+    """Overwrite ``runconfig.groups.worker`` in each runconfig YAML.
+
+    ``s1_geocode_stack.run`` writes runconfigs from COMPASS's bundled
+    ``defaults/s1_cslc_geo.yaml``, which hard-codes ``gpu_enabled: False``
+    and offers no API to override it. We re-open each YAML and rewrite
+    the worker section so resumed runs (which only re-read the YAML)
+    pick up the same setting.
+    """
+    for cfg_path in runconfig_files:
+        with open(cfg_path) as f:
+            doc = yaml.safe_load(f)
+        worker = doc["runconfig"]["groups"]["worker"]
+        worker["gpu_enabled"] = gpu_enabled
+        worker["gpu_id"] = gpu_id
+        with open(cfg_path, "w") as f:
+            yaml.safe_dump(doc, f, default_flow_style=False)

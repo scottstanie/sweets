@@ -1,12 +1,17 @@
 """Sensor source models: raw S1 bursts, pre-made OPERA CSLCs, or NISAR GSLCs.
 
-Three source classes are exposed; all are :class:`YamlModel` Pydantic models
-with the same external shape (an AOI, a date range, an optional track and
-``out_dir``) so :class:`sweets.core.Workflow` can swap between them:
+Four source classes are exposed; all are :class:`YamlModel` Pydantic models
+with a similar external shape (an AOI, an optional track, ``out_dir``) so
+:class:`sweets.core.Workflow` can swap between them:
 
 - :class:`BurstSearch` — wraps :func:`burst2safe.burst2stack.burst2stack`
   to download burst-trimmed ``.SAFE`` directories that the rest of the
   workflow then geocodes via COMPASS. Default; works anywhere S1 flies.
+- :class:`LocalSafeSearch` — points at a user-supplied directory of
+  pre-downloaded full-frame Sentinel-1 ``.SAFE`` directories or ``.zip``
+  archives (e.g. fetched directly from ASF Vertex). Skips the download
+  step entirely and feeds the files straight into COMPASS, picking
+  ``using_zipped`` automatically based on what's on disk.
 - :class:`OperaCslcSearch` — wraps :func:`opera_utils.download.download_cslcs`
   + :func:`opera_utils.download.download_cslc_static_layers` to grab
   pre-geocoded OPERA CSLC HDF5s + their static layers from ASF DAAC. Skips
@@ -18,8 +23,8 @@ with the same external shape (an AOI, a date range, an optional track and
   and static layer stitching (NISAR GSLCs have no separate static layers
   product). Coverage and availability depend on NISAR's acquisition plan.
 
-Authentication for any source relies on a ``~/.netrc`` entry for
-``urs.earthdata.nasa.gov``.
+Authentication for any network-fetching source relies on a ``~/.netrc``
+entry for ``urs.earthdata.nasa.gov``.
 """
 
 from __future__ import annotations
@@ -271,6 +276,116 @@ def _filter_by_flight_direction(
         else:
             logger.info(f"Dropping {s.name}: not {upper}")
     return keep
+
+
+# ----------------------------------------------------------------------------
+# Local SAFE / SAFE-zip source (no download)
+# ----------------------------------------------------------------------------
+
+
+class LocalSafeSearch(YamlModel):
+    """Source for pre-downloaded Sentinel-1 ``.SAFE`` directories or ``.zip`` archives.
+
+    Use this when the user already has full-frame S1 SAFE products on disk
+    (e.g. fetched directly from ASF Vertex, copied off another machine,
+    etc.) and wants sweets to skip the download step and feed the files
+    straight into COMPASS. Both unzipped ``.SAFE`` directories and zipped
+    ``.zip`` archives are accepted; sweets inspects :attr:`out_dir` and
+    picks whichever format is present (preferring ``.SAFE`` when both
+    are, which is the faster path for COMPASS / s1-reader).
+
+    No date range is required — sweets uses whatever's in :attr:`out_dir`
+    as-is. Provide :attr:`bbox` (or :attr:`wkt`) so the AOI can be cropped
+    to the user's study area during geocoding.
+    """
+
+    kind: Literal["local"] = Field(
+        default="local",
+        description="Discriminator for the source type. Always `local`.",
+    )
+    out_dir: Path = Field(
+        ...,
+        description=(
+            "Directory containing pre-downloaded ``.SAFE`` directories or"
+            " ``.zip`` archives. Must already exist and contain at least"
+            " one ``S1[AB]_*.SAFE`` or ``S1[AB]_*.zip`` file."
+        ),
+    )
+    bbox: Optional[tuple[float, float, float, float]] = Field(
+        None,
+        description=(
+            "Area of interest as (left, bottom, right, top) in decimal degrees."
+            " Either `bbox` or `wkt` must be set."
+        ),
+    )
+    wkt: Optional[str] = Field(
+        None,
+        description=(
+            "Area of interest as a WKT polygon string (or path to a `.wkt` file)."
+            " Takes precedence over `bbox` if both are provided."
+        ),
+    )
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    # ------------------------------------------------------------------
+    # Validators
+    # ------------------------------------------------------------------
+
+    @field_validator("out_dir")
+    @classmethod
+    def _absolute_out_dir(cls, v: Path) -> Path:
+        return Path(v).expanduser().resolve()
+
+    @model_validator(mode="after")
+    def _check_aoi(self) -> "LocalSafeSearch":
+        if not self.wkt and not self.bbox:
+            msg = "Must provide either `bbox` or `wkt`"
+            raise ValueError(msg)
+        if self.wkt and Path(self.wkt).exists():
+            self.wkt = Path(self.wkt).read_text().strip()
+        if self.wkt:
+            try:
+                shp_wkt.loads(self.wkt)
+            except Exception as e:
+                msg = f"Invalid WKT polygon: {e}"
+                raise ValueError(msg) from e
+        return self
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    @property
+    def aoi(self) -> Polygon:
+        """Return the AOI as a shapely Polygon."""
+        if self.wkt:
+            return shp_wkt.loads(self.wkt)
+        assert self.bbox is not None
+        return box(*self.bbox)
+
+    def existing_safes(self) -> list[Path]:
+        """Return ``.SAFE`` dirs in `out_dir`, or ``.zip`` files if no SAFEs.
+
+        ``.SAFE`` directories are preferred when both formats are present
+        — COMPASS reads them slightly faster than zips and both formats in
+        the same directory typically have matching stems (e.g. leftovers
+        from an earlier unzip), so picking the zip in that case would just
+        re-read the same product.
+        """
+        safes = sorted(self.out_dir.glob("S1[AB]_*.SAFE"))
+        if safes:
+            return safes
+        return sorted(self.out_dir.glob("S1[AB]_*.zip"))
+
+    def summary(self) -> str:
+        """Return a human-readable summary of the configured source."""
+        bounds = self.aoi.bounds
+        return (
+            "LocalSafeSearch:\n"
+            f"  AOI bounds : {bounds}\n"
+            f"  Source dir : {self.out_dir}"
+        )
 
 
 # ----------------------------------------------------------------------------

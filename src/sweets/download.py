@@ -30,6 +30,7 @@ entry for ``urs.earthdata.nasa.gov``.
 from __future__ import annotations
 
 import asyncio
+import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 from pathlib import Path
@@ -267,8 +268,11 @@ class BurstSearch(YamlModel):
         return safes
 
     def existing_safes(self) -> list[Path]:
-        """Return any SAFEs already present in `out_dir` (does not query ASF)."""
-        return sorted(self.out_dir.glob("S1[AB]_*.SAFE"))
+        """Return any SAFEs already present in `out_dir` (does not query ASF).
+
+        The glob covers S1A-S1D so Sentinel-1C/D products are not dropped.
+        """
+        return sorted(self.out_dir.glob("S1[A-D]_*.SAFE"))
 
 
 def _filter_by_flight_direction(
@@ -318,9 +322,12 @@ class LocalSafeSearch(YamlModel):
     picks whichever format is present (preferring ``.SAFE`` when both
     are, which is the faster path for COMPASS / s1-reader).
 
-    No date range is required — sweets uses whatever's in :attr:`out_dir`
-    as-is. Provide :attr:`bbox` (or :attr:`wkt`) so the AOI can be cropped
-    to the user's study area during geocoding.
+    No date range is required — by default sweets uses whatever's in
+    :attr:`out_dir`. Optionally set :attr:`start` / :attr:`end` to use only
+    the SAFEs whose acquisition date falls in that range (handy when the
+    directory holds a longer archive than the study period). Provide
+    :attr:`bbox` (or :attr:`wkt`) so the AOI can be cropped to the user's
+    study area during geocoding.
     """
 
     kind: Literal["local"] = Field(
@@ -332,7 +339,21 @@ class LocalSafeSearch(YamlModel):
         description=(
             "Directory containing pre-downloaded ``.SAFE`` directories or"
             " ``.zip`` archives. Must already exist and contain at least"
-            " one ``S1[AB]_*.SAFE`` or ``S1[AB]_*.zip`` file."
+            " one ``S1[A-D]_*.SAFE`` or ``S1[A-D]_*.zip`` file."
+        ),
+    )
+    start: Optional[datetime] = Field(
+        None,
+        description=(
+            "Optional start of the acquisition-date filter (parsed by"
+            " `dateutil.parser`). If unset, no lower bound is applied."
+        ),
+    )
+    end: Optional[datetime] = Field(
+        None,
+        description=(
+            "Optional end of the acquisition-date filter. If unset, no upper"
+            " bound is applied."
         ),
     )
     bbox: Optional[tuple[float, float, float, float]] = Field(
@@ -395,12 +416,38 @@ class LocalSafeSearch(YamlModel):
         — COMPASS reads them slightly faster than zips and both formats in
         the same directory typically have matching stems (e.g. leftovers
         from an earlier unzip), so picking the zip in that case would just
-        re-read the same product.
+        re-read the same product. When :attr:`start` / :attr:`end` are set,
+        only SAFEs whose acquisition date falls in ``[start, end]`` are
+        returned.
+
+        The glob covers S1A-S1D (Sentinel-1C is operational; the old
+        ``S1[AB]`` pattern silently dropped every S1C product).
         """
-        safes = sorted(self.out_dir.glob("S1[AB]_*.SAFE"))
-        if safes:
+        safes = sorted(self.out_dir.glob("S1[A-D]_*.SAFE"))
+        if not safes:
+            safes = sorted(self.out_dir.glob("S1[A-D]_*.zip"))
+        return self._filter_by_date(safes)
+
+    def _filter_by_date(self, safes: list[Path]) -> list[Path]:
+        """Keep SAFEs whose acquisition start date is in ``[start, end]``."""
+        if self.start is None and self.end is None:
             return safes
-        return sorted(self.out_dir.glob("S1[AB]_*.zip"))
+        kept = []
+        for p in safes:
+            m = re.search(r"_(\d{8})T\d{6}_", p.name)
+            if m is None:
+                # Unparseable name: keep it rather than silently dropping.
+                kept.append(p)
+                continue
+            acq = datetime.strptime(m.group(1), "%Y%m%d")
+            if self.start is not None and acq < self.start.replace(
+                hour=0, minute=0, second=0, microsecond=0
+            ):
+                continue
+            if self.end is not None and acq > self.end:
+                continue
+            kept.append(p)
+        return kept
 
     def summary(self) -> str:
         """Return a human-readable summary of the configured source."""

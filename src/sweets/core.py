@@ -563,6 +563,27 @@ class Workflow(YamlModel):
         return self.search.download()
 
     @log_runtime
+    def _stage_geocode_safes(self, safes: list[Path]) -> Path:
+        """Symlink the selected SAFEs into a private dir for COMPASS.
+
+        ``s1_geocode_stack`` globs its ``slc_dir`` for every SAFE/zip, so
+        pointing it at the shared download directory would geocode the whole
+        archive regardless of the source's date filter (e.g. a
+        ``LocalSafeSearch`` ``start`` / ``end``). Staging exactly ``safes``
+        guarantees COMPASS only sees the selected acquisitions.
+        """
+        stage = self.work_dir / "_geocode_input_safes"
+        stage.mkdir(parents=True, exist_ok=True)
+        wanted = {p.name for p in safes}
+        for link in stage.iterdir():
+            if link.is_symlink() and link.name not in wanted:
+                link.unlink()
+        for p in safes:
+            link = stage / p.name
+            if not link.exists():
+                link.symlink_to(p.resolve())
+        return stage
+
     def _geocode_slcs(
         self, safes: list[Path], dem_file: Path, burst_db_file: Path
     ) -> tuple[list[Path], list[Path]]:
@@ -572,7 +593,7 @@ class Workflow(YamlModel):
         # user declare it. BurstSearch always produces `.SAFE` directories.
         using_zipped = safes[0].suffix == ".zip"
         compass_cfg_files = create_config_files(
-            slc_dir=safes[0].parent,
+            slc_dir=self._stage_geocode_safes(safes),
             burst_db_file=burst_db_file,
             dem_file=dem_file,
             orbit_dir=self.orbit_dir,

@@ -234,8 +234,13 @@ class ConfigCli(Workflow):
                 "out_dir": data.get("out_dir", Path("data")),
             }
             if src == "local":
-                # LocalSafeSearch has no dates; files already on disk.
-                pass
+                # Dates are optional for local: when given, they filter the
+                # pre-downloaded SAFEs to the study period (the directory may
+                # hold a longer archive than you want to process).
+                if data.get("start") is not None:
+                    search["start"] = data["start"]
+                if data.get("end") is not None:
+                    search["end"] = data["end"]
             else:
                 if data.get("start") is None or data.get("end") is None:
                     msg = f"--start and --end are required for --source {src}"

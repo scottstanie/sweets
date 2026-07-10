@@ -40,7 +40,13 @@ from ._orbit import download_orbits
 from ._tropo import TropoOptions, run_tropo_correction
 from ._types import Filename
 from .dem import create_dem, create_water_mask
-from .download import BurstSearch, LocalSafeSearch, NisarGslcSearch, OperaCslcSearch
+from .download import (
+    BurstSearch,
+    LocalSafeSearch,
+    NisarGslcSearch,
+    OperaCslcSearch,
+    drop_s1_degraded_dates,
+)
 
 if TYPE_CHECKING:
     from dolphin.workflows.displacement import OutputPaths
@@ -553,13 +559,10 @@ class Workflow(YamlModel):
             return existing
 
         assert isinstance(self.search, BurstSearch)
-        existing = self.search.existing_safes()
-        if existing and not self.overwrite:
-            logger.info(
-                f"Found {len(existing)} existing SAFE dirs in"
-                f" {self.search.out_dir}; skipping burst2safe download."
-            )
-            return existing
+        # No existing-SAFE short circuit here: `BurstSearch.download` resumes
+        # by itself, skipping acquisitions whose SAFE is already on disk, so
+        # a partial download (or a widened date range) is completed rather
+        # than mistaken for a finished stack.
         return self.search.download()
 
     @log_runtime
@@ -794,6 +797,12 @@ class Workflow(YamlModel):
         # Always re-collect GSLCs from disk before dolphin so a starting_step=3
         # run still finds them.
         gslc_files = self._existing_gslcs()
+        if not isinstance(self.search, NisarGslcSearch):
+            # Applied here (not only at download) so already-downloaded
+            # stacks are also protected.
+            from opera_utils import get_dates
+
+            gslc_files = drop_s1_degraded_dates(gslc_files, lambda p: get_dates(p)[0])
         logger.info(f"Found {len(gslc_files)} GSLC files for dolphin")
         if not gslc_files:
             where = (

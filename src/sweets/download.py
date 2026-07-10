@@ -69,6 +69,224 @@ def _call_off_running_loop(fn: Callable[..., _T], *args: Any, **kwargs: Any) -> 
 
 FlightDirection = Literal["ASCENDING", "DESCENDING"]
 
+# Known windows of degraded Sentinel-1 operations, as (start, end, reason)
+# with `start <= acquisition < end`. Acquisitions inside a window are dropped
+# from every S1 source with a warning -- the data exist at ASF but are not
+# usable for InSAR.
+S1_DEGRADED_WINDOWS: list[tuple[datetime, datetime, str]] = [
+    (
+        datetime(2025, 4, 28),
+        datetime(2025, 5, 2),
+        "S1 production/orbit determination degraded following the 2025-04-28"
+        " Iberian Peninsula power outage",
+    ),
+]
+
+
+def s1_degraded_reason(dt: datetime) -> Optional[str]:
+    """Return the reason `dt` falls in a known degraded-S1 window, else None."""
+    for start, end, reason in S1_DEGRADED_WINDOWS:
+        if start <= dt < end:
+            return reason
+    return None
+
+
+def drop_s1_degraded_dates(
+    items: list[_T], get_date: Callable[[_T], datetime]
+) -> list[_T]:
+    """Drop items acquired inside a known degraded-S1 window, with a warning."""
+    kept: list[_T] = []
+    dropped: dict[str, list[str]] = {}
+    for item in items:
+        dt = get_date(item)
+        reason = s1_degraded_reason(dt)
+        if reason is None:
+            kept.append(item)
+        else:
+            dropped.setdefault(reason, []).append(dt.strftime("%Y-%m-%d"))
+    for reason, dates in dropped.items():
+        logger.warning(
+            f"Dropping {len(dates)} acquisition(s) from degraded-S1 window"
+            f" ({reason}): {sorted(set(dates))}"
+        )
+    return kept
+
+
+def _dedup_burst_infos(burst_infos: list[Any]) -> list[Any]:
+    """Drop duplicate burst granules from an ASF search.
+
+    ASF occasionally publishes the same burst (identical absolute orbit,
+    burst ID, swath, and polarization) under two product-unique granule
+    names, which makes `burst2safe`'s consecutive-burst-ID validity check
+    raise (https://github.com/ASFHyP3/burst2safe/issues/240). The underlying
+    pixel data are identical, so keep one copy per burst — the
+    lexicographically greatest granule name, for determinism.
+    """
+    best: dict[tuple[int, int, str, str], Any] = {}
+    for info in burst_infos:
+        key = (info.absolute_orbit, info.burst_id, info.swath, info.polarization)
+        prev = best.get(key)
+        if prev is None or (info.granule or "") > (prev.granule or ""):
+            best[key] = info
+    n_dropped = len(burst_infos) - len(best)
+    if n_dropped:
+        logger.warning(f"Dropped {n_dropped} duplicate burst granule(s) from ASF")
+    return list(best.values())
+
+
+def _unlink_corrupt_burst_files(burst_infos: list[Any]) -> list[Path]:
+    """Delete downloaded burst tiffs and metadata XMLs that cannot be read.
+
+    ASF sometimes returns a truncated response with HTTP 200, which
+    burst2safe writes to disk without complaint and whose existence-only
+    completeness check then accepts. For tiffs, reading the middle and last
+    rows catches truncation cheaply without scanning every strip; metadata
+    XMLs are small enough to simply parse in full.
+    """
+    from lxml import etree
+    from osgeo import gdal
+
+    bad: list[Path] = []
+    for info in burst_infos:
+        path = info.data_path
+        assert path is not None
+        try:
+            ds = gdal.OpenEx(str(path), gdal.OF_RASTER | gdal.OF_READONLY)
+            band = ds.GetRasterBand(1)
+            for row in (band.YSize // 2, band.YSize - 1):
+                # None return = read failure when GDAL exceptions are off
+                if band.ReadRaster(0, row, band.XSize, 1) is None:
+                    raise RuntimeError(f"unreadable row {row}")
+        except (RuntimeError, AttributeError):
+            bad.append(path)
+            path.unlink()
+
+    # Several bursts share one metadata file; check each path once.
+    for path in {info.metadata_path for info in burst_infos}:
+        try:
+            etree.parse(path)
+        except etree.XMLSyntaxError:
+            bad.append(path)
+            path.unlink()
+    return bad
+
+
+def _burst2stack_dedup(
+    extent: Polygon,
+    rel_orbit: Optional[int],
+    start_date: datetime,
+    end_date: datetime,
+    polarizations: list[str],
+    swaths: Optional[list[str]],
+    min_bursts: int,
+    all_anns: bool,
+    work_dir: Path,
+) -> list[Path]:
+    """Run `burst2safe.burst2stack.burst2stack` with duplicate-burst handling.
+
+    Mirrors the upstream function body, inserting :func:`_dedup_burst_infos`
+    between the search and the per-orbit validity check that duplicates
+    would otherwise trip.
+    """
+    from burst2safe import utils
+    from burst2safe.download import download_bursts
+    from burst2safe.safe import Safe
+    from burst2safe.search import find_group
+
+    burst_search_results = find_group(
+        rel_orbit,
+        extent,
+        polarizations,
+        swaths,
+        "IW",
+        min_bursts,
+        use_relative_orbit=True,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    burst_infos = _dedup_burst_infos(
+        utils.get_burst_infos(burst_search_results, work_dir)
+    )
+    burst_infos = drop_s1_degraded_dates(burst_infos, lambda bi: bi.date)
+    abs_orbits = utils.drop_duplicates([bi.absolute_orbit for bi in burst_infos])
+    logger.info(
+        f"Found {len(burst_infos)} burst(s), comprising {len(abs_orbits)} SAFE(s)."
+    )
+
+    burst_sets = [
+        [bi for bi in burst_infos if bi.absolute_orbit == orbit] for orbit in abs_orbits
+    ]
+    for burst_set in burst_sets:
+        Safe.check_group_validity(burst_set)
+
+    # Resume support: burst2safe deletes the source tiffs after assembling
+    # each SAFE, so a SAFE already on disk means that acquisition is done —
+    # re-downloading its bursts would repeat the whole fetch.
+    existing_dates = {
+        m.group(1)
+        for p in work_dir.glob("S1[A-D]_*.SAFE")
+        if (m := re.search(r"_(\d{8})T\d{6}_", p.name))
+    }
+    n_total = len(burst_sets)
+    burst_sets = [
+        bs
+        for bs in burst_sets
+        if min(bi.date for bi in bs).strftime("%Y%m%d") not in existing_dates
+    ]
+    if n_total > len(burst_sets):
+        logger.info(
+            f"Skipping {n_total - len(burst_sets)} acquisition(s) with"
+            f" existing SAFEs in {work_dir}"
+        )
+    burst_infos = [bi for bs in burst_sets for bi in bs]
+
+    logger.info("Downloading data...")
+    import aiohttp
+
+    # ASF burst downloads time out routinely on stacks this size
+    # (https://github.com/isce-framework/sweets/issues/149). burst2safe
+    # requests every burst concurrently in one asyncio.gather with a 5-minute
+    # aiohttp timeout, so large stacks starve each stream's bandwidth and the
+    # extractor truncates responses. Chunking bounds the concurrency, and
+    # already-complete files are skipped, so each attempt (and each retry)
+    # only fetches what's missing.
+    chunk_size = 8
+    max_attempts = 5
+    for attempt in range(1, max_attempts + 1):
+        try:
+            for i in range(0, len(burst_infos), chunk_size):
+                download_bursts(burst_infos[i : i + chunk_size])
+        except (TimeoutError, ValueError, aiohttp.ClientError) as e:
+            if attempt == max_attempts:
+                raise
+            logger.warning(
+                f"Burst download attempt {attempt}/{max_attempts} failed"
+                f" ({e!r}); retrying"
+            )
+            continue
+        corrupt = _unlink_corrupt_burst_files(burst_infos)
+        if not corrupt:
+            break
+        if attempt == max_attempts:
+            msg = (
+                f"Corrupt burst files persist after {max_attempts} attempts: {corrupt}"
+            )
+            raise RuntimeError(msg)
+        logger.warning(
+            f"Removed {len(corrupt)} corrupt/truncated burst file(s);"
+            " re-downloading them"
+        )
+
+    logger.info("Creating SAFEs...")
+    safe_paths = []
+    for burst_set in burst_sets:
+        [info.add_shape_info() for info in burst_set]
+        [info.add_start_stop_utc() for info in burst_set]
+        safe = Safe(burst_set, all_anns, work_dir)
+        safe_paths.append(safe.create_safe())
+        safe.cleanup()
+    return safe_paths
+
 
 class BurstSearch(YamlModel):
     """Sentinel-1 burst search/download configuration.
@@ -242,15 +460,11 @@ class BurstSearch(YamlModel):
             Paths of the produced ``.SAFE`` directories.
 
         """
-        # Imported lazily so importing this module is cheap and so users
-        # without burst2safe still get a clear error.
-        from burst2safe.burst2stack import burst2stack
-
         self.out_dir.mkdir(parents=True, exist_ok=True)
         logger.info(self.summary())
 
         result = _call_off_running_loop(
-            burst2stack,
+            _burst2stack_dedup,
             rel_orbit=self.track,
             start_date=self.start,
             end_date=self.end,
@@ -261,8 +475,10 @@ class BurstSearch(YamlModel):
             all_anns=self.all_anns,
             work_dir=self.out_dir,
         )
-        safes = sorted(Path(p) for p in result)
-        logger.info(f"Downloaded {len(safes)} SAFE directories to {self.out_dir}")
+        logger.info(f"Created {len(result)} new SAFE directories in {self.out_dir}")
+        # Include SAFEs from previous (possibly partial) runs, which
+        # `_burst2stack_dedup` skips rather than recreates.
+        safes = self.existing_safes()
         if self.flight_direction is not None:
             safes = _filter_by_flight_direction(safes, self.flight_direction)
         return safes

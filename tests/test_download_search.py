@@ -82,3 +82,46 @@ def test_opera_cslc_search_resolves_burst_ids(tmp_path: Path) -> None:
     # OPERA burst IDs look like "t071_151200_iw2": track-prefixed, _iw<n> suffix.
     assert all(bid.startswith("t071_") for bid in burst_ids)
     assert all("_iw" in bid for bid in burst_ids)
+
+
+def test_dedup_burst_infos_drops_duplicate_granules() -> None:
+    """Duplicate ASF burst products (burst2safe#240) collapse to one per burst."""
+    from types import SimpleNamespace
+
+    from sweets.download import _dedup_burst_infos
+
+    def info(granule: str, burst_id: int) -> SimpleNamespace:
+        return SimpleNamespace(
+            granule=granule,
+            burst_id=burst_id,
+            absolute_orbit=4328,
+            swath="IW2",
+            polarization="VV",
+        )
+
+    infos = [
+        info("S1_281635_IW2_20250928T174643_VV_9D91-BURST", 281635),
+        info("S1_281635_IW2_20250928T174643_VV_5C01-BURST", 281635),
+        info("S1_281636_IW2_20250928T174646_VV_9D91-BURST", 281636),
+        info("S1_281636_IW2_20250928T174646_VV_5C01-BURST", 281636),
+    ]
+    deduped = _dedup_burst_infos(infos)
+    assert [i.burst_id for i in deduped] == [281635, 281636]
+    # Deterministic winner: the lexicographically greatest granule name.
+    assert all(i.granule.endswith("9D91-BURST") for i in deduped)
+
+
+def test_drop_s1_degraded_dates_blocks_iberian_outage_window() -> None:
+    """Acquisitions inside a degraded-S1 window are dropped with a warning."""
+    from datetime import datetime
+
+    from sweets.download import drop_s1_degraded_dates
+
+    dates = [
+        datetime(2025, 4, 25),  # before window: kept
+        datetime(2025, 4, 28),  # window start: dropped
+        datetime(2025, 5, 1),  # inside: dropped
+        datetime(2025, 5, 2),  # window end (exclusive): kept
+    ]
+    kept = drop_s1_degraded_dates(dates, lambda d: d)
+    assert kept == [datetime(2025, 4, 25), datetime(2025, 5, 2)]

@@ -1,3 +1,14 @@
+# Unreleased
+
+**New features**
+- **Optionally skip water masking.** A new `water_mask_enabled` config field
+  (default `True`) lets you bypass water masking entirely. When set to `False`,
+  sweets skips building `water_mask_filename` in step 1 and passes no mask to
+  dolphin, so nothing is masked out. Disable it from the CLI with
+  `sweets config --no-water-mask-enabled ...`. Useful where water masking causes
+  more unwrapping errors than it prevents (noisy rivers / coastlines) or where
+  masking is unnecessary. Closes #156.
+
 # [0.3.0](https://github.com/opera-adt/sweets/compare/v0.2.0...v0.3.0) - 2026-04-12
 
 **Major changes**

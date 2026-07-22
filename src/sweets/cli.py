@@ -41,6 +41,12 @@ from sweets.core import Source, Workflow
 
 SourceKind = Literal["safe", "local", "opera-cslc", "nisar-gslc"]
 
+# Workflow fields whose default is a `default_factory=lambda data: ...`
+# building a `<work_dir>/...` path. ConfigCli redeclares each as
+# `Optional[...] = None` (see below) and strips the None before handing
+# off to Workflow, so Workflow's factory produces the real default.
+_WORK_DIR_DERIVED_FIELDS = ("dem_filename", "water_mask_filename", "orbit_dir")
+
 
 class ConfigCli(Workflow):
     """Create a ``sweets_config.yaml`` from CLI arguments.
@@ -97,6 +103,13 @@ class ConfigCli(Workflow):
         description=(
             "Water mask in EPSG:4326 (uint8, 1=land, 0=water). Defaults"
             " to `<work_dir>/watermask.tif` (derived from the DEM)."
+        ),
+    )
+    orbit_dir: Optional[Path] = Field(  # type: ignore[assignment]
+        default=None,
+        description=(
+            "Directory for Sentinel-1 precise orbit files. Defaults to"
+            " `<work_dir>/orbits`."
         ),
     )
 
@@ -274,10 +287,9 @@ class ConfigCli(Workflow):
                 tropo_dict["enabled"] = True
                 data["tropo"] = tropo_dict
 
-            # Strip CLI-only None overrides for fields whose Workflow
-            # default_factory builds a `<work_dir>/...` path — leaving
-            # them as None would override Workflow's factory with None.
-            for key in ("dem_filename", "water_mask_filename"):
+            # Leaving these as None would override Workflow's factory
+            # with None rather than falling back to it.
+            for key in _WORK_DIR_DERIVED_FIELDS:
                 if data.get(key) is None:
                     data.pop(key, None)
 
@@ -288,7 +300,7 @@ class ConfigCli(Workflow):
 
         Serializes via a fresh :class:`Workflow` instance rather than
         dumping ``self`` directly. That matters because ConfigCli
-        overrides ``dem_filename`` / ``water_mask_filename`` as
+        overrides every field in ``_WORK_DIR_DERIVED_FIELDS`` as
         ``Optional[Path] = None`` (tyro can't materialize Workflow's
         own ``default_factory=lambda data: ...`` at parse time), so
         dumping ``self`` would serialize ``null`` for those fields and
@@ -301,7 +313,7 @@ class ConfigCli(Workflow):
             print("error: one of --bbox or --wkt is required", file=sys.stderr)
             raise SystemExit(2)
         payload = self.model_dump(by_alias=True)
-        for key in ("dem_filename", "water_mask_filename"):
+        for key in _WORK_DIR_DERIVED_FIELDS:
             if payload.get(key) is None:
                 payload.pop(key, None)
         workflow = Workflow.model_validate(payload)

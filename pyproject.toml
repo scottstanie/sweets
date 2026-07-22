@@ -60,6 +60,9 @@ dependencies = [
   "sentineleof",
   "shapely",
   "tyro",
+  # Default unwrapper (`dolphin.unwrap_method: whirlwind`). Not on
+  # conda-forge, so it stays a pypi-only dep.
+  "whirlwind-insar",
 ]
 
 [project.optional-dependencies]

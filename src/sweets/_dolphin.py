@@ -146,14 +146,6 @@ class DolphinOptions(BaseModel):
         le=1.0,
         description="Coherence below which a pixel is interpolated.",
     )
-    whirlwind_goldstein_alpha: float = Field(
-        default=0.0,
-        ge=0.0,
-        description=(
-            "Strength of whirlwind's internal Goldstein pre-filter; 0 disables"
-            " it. The filter only informs the minimum-cost-flow solve."
-        ),
-    )
     whirlwind_bridge: bool = Field(
         default=True,
         description=(
@@ -255,7 +247,6 @@ def build_displacement_config(
             "num_threads": options.whirlwind_num_threads,
             "interpolate": options.whirlwind_interpolate,
             "interp_cutoff": options.whirlwind_interp_cutoff,
-            "goldstein_alpha": options.whirlwind_goldstein_alpha,
             "bridge": options.whirlwind_bridge,
         }
 

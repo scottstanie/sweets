@@ -15,7 +15,11 @@
 # --platform=linux/amd64 is pinned because sweets' pixi workspace supports
 # only linux-64 / osx-arm64, and isce3 has no linux-aarch64 conda build.
 # On Apple Silicon Docker Desktop this means the container runs emulated.
-FROM --platform=linux/amd64 ghcr.io/prefix-dev/pixi:0.65.0 AS install
+# Must be new enough to read the `pixi.lock` format in this repo (v7). An
+# older pixi treats the lock as missing and silently re-solves from scratch,
+# which both defeats the point of committing it and can fail on git-pinned
+# deps that no longer co-resolve.
+FROM --platform=linux/amd64 ghcr.io/prefix-dev/pixi:0.68.1 AS install
 
 # git + ca-certificates needed for pip to install git+ pypi dependencies
 # (scottstanie/s1-reader, scottstanie/COMPASS, scottstanie/opera-utils,

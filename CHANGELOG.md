@@ -7,8 +7,8 @@
   `spurt` remain available. New `dolphin.whirlwind_*` knobs cover the
   tunables sweets users reach for: `whirlwind_num_threads`,
   `whirlwind_interpolate` / `whirlwind_interp_cutoff` (persistent-scatterer
-  interpolation pre-pass), `whirlwind_goldstein_alpha`, and
-  `whirlwind_bridge`. Adds a `whirlwind-insar` runtime dependency.
+  interpolation pre-pass), and `whirlwind_bridge`. Adds a `whirlwind-insar`
+  runtime dependency.
 
 **New features**
 - **Optionally skip water masking.** A new `water_mask_enabled` config field

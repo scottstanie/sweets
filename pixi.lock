@@ -340,8 +340,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-3.23.0-pyhd8ed1ab_0.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#0e4df98990cfd6b6d7a34cd89ea624c8bf3bc053
-      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#b032c25a7415d93792ec89483d09993c7c50d133
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
       - pypi: https://files.pythonhosted.org/packages/0c/d5/c5db1ea3394c6e1732fb3286b3bd878b59507a8f77d32a2cebda7d7b7cd4/donfig-0.8.1.post1-py3-none-any.whl
@@ -640,8 +640,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-h6491c7d_2.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#0e4df98990cfd6b6d7a34cd89ea624c8bf3bc053
-      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#b032c25a7415d93792ec89483d09993c7c50d133
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
       - pypi: https://files.pythonhosted.org/packages/0c/d5/c5db1ea3394c6e1732fb3286b3bd878b59507a8f77d32a2cebda7d7b7cd4/donfig-0.8.1.post1-py3-none-any.whl
@@ -1019,8 +1019,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-3.23.0-pyhcf101f3_1.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#0e4df98990cfd6b6d7a34cd89ea624c8bf3bc053
-      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#b032c25a7415d93792ec89483d09993c7c50d133
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
       - pypi: https://files.pythonhosted.org/packages/0c/d5/c5db1ea3394c6e1732fb3286b3bd878b59507a8f77d32a2cebda7d7b7cd4/donfig-0.8.1.post1-py3-none-any.whl
@@ -1329,8 +1329,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hbf9d68e_6.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#0e4df98990cfd6b6d7a34cd89ea624c8bf3bc053
-      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#b032c25a7415d93792ec89483d09993c7c50d133
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
       - pypi: https://files.pythonhosted.org/packages/0c/d5/c5db1ea3394c6e1732fb3286b3bd878b59507a8f77d32a2cebda7d7b7cd4/donfig-0.8.1.post1-py3-none-any.whl
@@ -1598,8 +1598,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-3.23.0-pyhd8ed1ab_0.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#0e4df98990cfd6b6d7a34cd89ea624c8bf3bc053
-      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#b032c25a7415d93792ec89483d09993c7c50d133
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
       - pypi: https://files.pythonhosted.org/packages/0c/d5/c5db1ea3394c6e1732fb3286b3bd878b59507a8f77d32a2cebda7d7b7cd4/donfig-0.8.1.post1-py3-none-any.whl
@@ -1850,8 +1850,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-h6491c7d_2.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#0e4df98990cfd6b6d7a34cd89ea624c8bf3bc053
-      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#b032c25a7415d93792ec89483d09993c7c50d133
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
       - pypi: https://files.pythonhosted.org/packages/0c/d5/c5db1ea3394c6e1732fb3286b3bd878b59507a8f77d32a2cebda7d7b7cd4/donfig-0.8.1.post1-py3-none-any.whl
@@ -2196,8 +2196,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-3.23.0-pyhd8ed1ab_0.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#0e4df98990cfd6b6d7a34cd89ea624c8bf3bc053
-      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#b032c25a7415d93792ec89483d09993c7c50d133
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
       - pypi: https://files.pythonhosted.org/packages/0c/d5/c5db1ea3394c6e1732fb3286b3bd878b59507a8f77d32a2cebda7d7b7cd4/donfig-0.8.1.post1-py3-none-any.whl
@@ -2471,8 +2471,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-h6491c7d_2.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#0e4df98990cfd6b6d7a34cd89ea624c8bf3bc053
-      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#b032c25a7415d93792ec89483d09993c7c50d133
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
       - pypi: https://files.pythonhosted.org/packages/0c/d5/c5db1ea3394c6e1732fb3286b3bd878b59507a8f77d32a2cebda7d7b7cd4/donfig-0.8.1.post1-py3-none-any.whl
@@ -2842,8 +2842,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-3.23.0-pyhd8ed1ab_0.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#0e4df98990cfd6b6d7a34cd89ea624c8bf3bc053
-      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#b032c25a7415d93792ec89483d09993c7c50d133
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
       - pypi: https://files.pythonhosted.org/packages/0c/d5/c5db1ea3394c6e1732fb3286b3bd878b59507a8f77d32a2cebda7d7b7cd4/donfig-0.8.1.post1-py3-none-any.whl
@@ -3142,8 +3142,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-h6491c7d_2.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#0e4df98990cfd6b6d7a34cd89ea624c8bf3bc053
-      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#b032c25a7415d93792ec89483d09993c7c50d133
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
       - pypi: https://files.pythonhosted.org/packages/0c/d5/c5db1ea3394c6e1732fb3286b3bd878b59507a8f77d32a2cebda7d7b7cd4/donfig-0.8.1.post1-py3-none-any.whl
@@ -15294,15 +15294,15 @@ packages:
   - mkdocstrings[python] ; extra == 'docs'
   - pymdown-extensions ; extra == 'docs'
   requires_python: '>=3.8'
-- pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#0e4df98990cfd6b6d7a34cd89ea624c8bf3bc053
+- pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
   name: dolphin
-  version: 0.26.0.post1.dev318+g0e4df9899
+  version: 0.26.0.post1.dev368+gd663c79c5
   requires_dist:
   - h5py>=3.6
   - jax>=0.4.19
   - numba>=0.56
   - numpy>=1.23
-  - opera-utils>=0.4.1
+  - opera-utils>=0.25.7
   - pydantic>=2.1
   - pyproj>=3.3
   - rasterio>=1.3
@@ -15336,14 +15336,16 @@ packages:
   - snaphu>=0.4.1 ; extra == 'test'
   - xarray ; extra == 'test'
   requires_python: '>=3.10'
-- pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#b032c25a7415d93792ec89483d09993c7c50d133
+- pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
   name: opera-utils
-  version: 0.25.5.dev0
+  version: 0.25.8.post1.dev24+gf698333b0
   requires_dist:
+  - aiohttp
   - h5py>=1.10
   - numpy>=1.24
   - pooch>=1.7
   - pyproj>=3.3
+  - s3fs
   - shapely>=1.8
   - typing-extensions>=4
   - tyro>=0.9

@@ -50,12 +50,14 @@ def test_whirlwind_options_are_forwarded(tmp_path):
         whirlwind_num_threads=4,
         whirlwind_interpolate=True,
         whirlwind_interp_cutoff=0.3,
+        whirlwind_goldstein_alpha=0.5,
         whirlwind_bridge=False,
     )
     ww = cfg.unwrap_options.whirlwind_options
     assert ww.num_threads == 4
     assert ww.interpolate is True
     assert ww.interp_cutoff == 0.3
+    assert ww.goldstein_alpha == 0.5
     assert ww.bridge is False
 
 

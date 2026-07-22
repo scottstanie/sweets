@@ -114,6 +114,16 @@ class Workflow(YamlModel):
             " as the default, sweets derives one from a Copernicus DEM."
         ),
     )
+    water_mask_enabled: bool = Field(
+        default=True,
+        description=(
+            "Whether to build and apply a water mask. When False, sweets"
+            " skips creating `water_mask_filename` in step 1 and passes no"
+            " mask to dolphin, so nothing is masked out. Useful where water"
+            " masking causes more unwrapping errors than it prevents (e.g."
+            " noisy rivers / coastlines), or where masking is unnecessary."
+        ),
+    )
     orbit_dir: Path = Field(
         default=Path("orbits"),
         description="Directory for Sentinel-1 precise orbit files.",
@@ -668,7 +678,9 @@ class Workflow(YamlModel):
 
     @log_runtime
     def _run_dolphin(self, gslc_files: list[Path]) -> "OutputPaths":
-        mask = self.water_mask_filename if self.water_mask_filename.exists() else None
+        mask = None
+        if self.water_mask_enabled and self.water_mask_filename.exists():
+            mask = self.water_mask_filename
         return run_displacement(
             cslc_files=gslc_files,
             work_directory=self.dolphin_dir,
@@ -716,19 +728,28 @@ class Workflow(YamlModel):
         if starting_step <= 1:
             with ThreadPoolExecutor(max_workers=4) as pool:
                 dem_fut = pool.submit(create_dem, self.dem_filename, self._dem_bbox)
-                mask_fut = pool.submit(
-                    create_water_mask,
-                    self.water_mask_filename,
-                    self._water_mask_bbox,
+                # Skip the ASF tile mosaic entirely when masking is disabled;
+                # dolphin then runs unmasked (see `_run_dolphin`).
+                mask_fut = (
+                    pool.submit(
+                        create_water_mask,
+                        self.water_mask_filename,
+                        self._water_mask_bbox,
+                    )
+                    if self.water_mask_enabled
+                    else None
                 )
                 # burst-db is only needed by COMPASS.
                 burst_db_fut = pool.submit(get_burst_db) if needs_compass else None
-                futures: list = [dem_fut, mask_fut]
+                futures: list = [dem_fut]
+                if mask_fut is not None:
+                    futures.append(mask_fut)
                 if burst_db_fut is not None:
                     futures.append(burst_db_fut)
                 wait(futures)
                 dem_fut.result()
-                mask_fut.result()
+                if mask_fut is not None:
+                    mask_fut.result()
                 burst_db_file = burst_db_fut.result() if burst_db_fut else None
             self._download()
         else:

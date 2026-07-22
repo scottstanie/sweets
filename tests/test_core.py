@@ -94,6 +94,54 @@ class TestWorkflow:
         assert w.water_mask_filename == w.work_dir / "watermask.tif"
         assert w.log_dir == w.work_dir / "logs"
 
+    def test_water_mask_enabled_default_and_roundtrip(
+        self, tmp_path, bbox, search_kwargs
+    ):
+        # Defaults on.
+        w = Workflow(bbox=bbox, search=search_kwargs)
+        assert w.water_mask_enabled is True
+
+        # Disabling survives a YAML round-trip.
+        w = Workflow(bbox=bbox, search=search_kwargs, water_mask_enabled=False)
+        assert w.water_mask_enabled is False
+        outfile = tmp_path / "config.yaml"
+        w.to_yaml(outfile)
+        assert Workflow.from_yaml(outfile).water_mask_enabled is False
+
+    def test_run_dolphin_skips_mask_when_disabled(
+        self, monkeypatch, tmp_path, bbox, search_kwargs
+    ):
+        """`water_mask_enabled=False` passes no mask to dolphin, even if one exists."""
+        captured: dict = {}
+
+        def fake_run_displacement(**kwargs):
+            captured.update(kwargs)
+            return object()
+
+        monkeypatch.setattr("sweets.core.run_displacement", fake_run_displacement)
+
+        w = Workflow(
+            bbox=bbox,
+            search=search_kwargs,
+            work_dir=tmp_path,
+            water_mask_enabled=False,
+        )
+        # A mask file on disk must still be ignored when masking is disabled.
+        w.water_mask_filename.write_bytes(b"")
+
+        w._run_dolphin([Path("a.h5"), Path("b.h5")])
+        assert captured["mask_file"] is None
+
+        # Sanity check: with masking on, the existing file is passed through.
+        w_on = Workflow(
+            bbox=bbox,
+            search=search_kwargs,
+            work_dir=tmp_path,
+            water_mask_enabled=True,
+        )
+        w_on._run_dolphin([Path("a.h5"), Path("b.h5")])
+        assert captured["mask_file"] == w_on.water_mask_filename
+
     def test_missing_aoi_raises(self, search_kwargs):
         with pytest.raises(ValueError, match="bbox.*wkt"):
             Workflow(search=search_kwargs)

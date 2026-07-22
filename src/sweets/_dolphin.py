@@ -121,6 +121,15 @@ class DolphinOptions(BaseModel):
         default="smooth",
         description="SNAPHU statistical cost mode.",
     )
+    run_burst_align: bool = Field(
+        default=False,
+        description=(
+            "Estimate and remove inter-burst phase offsets from the per-burst"
+            " wrapped interferograms before stitching, so adjacent bursts"
+            " unwrap without seam jumps. Requires a dolphin build with"
+            " burst-alignment support (feat/burst-alignment)."
+        ),
+    )
     run_timeseries: bool = Field(
         default=True,
         description="Run dolphin's timeseries inversion + velocity estimation.",
@@ -203,6 +212,10 @@ def build_displacement_config(
         "unwrap_method": options.unwrap_method,
         "n_parallel_jobs": options.n_parallel_unwrap,
     }
+    if options.run_burst_align:
+        # Only set when requested so configs stay valid against dolphin
+        # builds without burst-alignment support.
+        unwrap_options["run_burst_align"] = True
     if options.unwrap_method == "snaphu":
         unwrap_options["snaphu_options"] = {
             "ntiles": list(snaphu_tiles),

@@ -340,7 +340,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-3.23.0-pyhd8ed1ab_0.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#293728c4ffb94e83ed8c272cfd536f23e87a0abd
       - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
@@ -352,7 +352,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/18/a6/907a406bb7d359e6a63f99c313846d9eec4f7e6f7437809e03aa00fa3074/absl_py-2.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/23/cd/066e86230ae37ed0be70aae89aabf03ca8d9f39c8aea0dec8029455b5540/opt_einsum-3.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2a/2d/d4bf65e47cea8ff2c794a600c4fd1273a7902f268757c531e0ee9f18aa58/pooch-1.9.0-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/2d/73/c14a2fec7bc1c038642f2abc6338a90a0637180506f3589e88dd098c76d2/whirlwind_insar-0.7.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/3a/cb/28ce52eb94390dda42599c98ea0204d74799e4d8047a0eb559b6fd648056/ml_dtypes-0.5.4-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/44/15/bb13b4913ef95ad5448490821eee4671d0e67673342e4d4070854e5fe081/zarr-3.1.5-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/4a/f3/00bb1e867fba351e2d784170955713bee200c43ea306c59f30bd7e748192/dask-2026.3.0-py3-none-any.whl
@@ -363,6 +362,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/83/81/793d78c91b0546b3b1f08e55fdd97437174171cd7d70e46098f1a4d94b7b/jax-0.7.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a3/ce/f9018bf69ae91b273b6391a095e7c93fa5e1617f25b6ba81ad4b20c9df10/immutabledict-4.3.1-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/ab/13/ba58309e792fe88f2ddbfc21bd657d4975a9a5490fd993d5d9a07b91e4bb/whirlwind_insar-0.10.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/b1/8b/88f16936a8e8070a83d36239555227ecd91728f9ef222c5382cda07e0fd6/h5netcdf-1.8.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ce/a9/a780cc66f86335a6019f557a8aaca8fbb970728f0efd2430d15ff1beae0e/google_crc32c-1.8.0-cp312-cp312-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/d5/1f/5f4a3cd9e4440e9d9bc78ad0a91a1c8d46b4d429d5239ebe6793c9fe5c41/fsspec-2026.3.0-py3-none-any.whl
@@ -640,7 +640,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-h6491c7d_2.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#293728c4ffb94e83ed8c272cfd536f23e87a0abd
       - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
@@ -649,6 +649,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/14/2f/967ba146e6d58cf6a652da73885f52fc68001525b4197effc174321d70b4/jmespath-1.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/16/e1/3079a9ff9b8e11b846c6ac5c8b5bfb7ff225eee721825310c91b3b50304f/tqdm-4.67.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/18/a6/907a406bb7d359e6a63f99c313846d9eec4f7e6f7437809e03aa00fa3074/absl_py-2.4.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/1f/05/280a1ebc9149049f670569f83946b280e7036ccb752f1002b34b44e5e688/whirlwind_insar-0.10.0-cp311-abi3-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/23/cd/066e86230ae37ed0be70aae89aabf03ca8d9f39c8aea0dec8029455b5540/opt_einsum-3.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2a/2d/d4bf65e47cea8ff2c794a600c4fd1273a7902f268757c531e0ee9f18aa58/pooch-1.9.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/31/ad/964ee5341767dd9e2f13e76f0a36d45aa8d81ad776c80bdd6dedc8f2f462/ortools-9.14.6206-cp312-cp312-macosx_11_0_arm64.whl
@@ -660,7 +661,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/71/e7/40fb618334dcdf7c5a316c0e7343c5cd82d3d866edc100d98e29bc945ecd/partd-1.4.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/83/81/793d78c91b0546b3b1f08e55fdd97437174171cd7d70e46098f1a4d94b7b/jax-0.7.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/a0/9a/2c3a96e7c1753fffdaa0684a1fe67b28b366075a2b39ea99f1d3eba60f54/whirlwind_insar-0.7.0-cp311-abi3-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/a3/ce/f9018bf69ae91b273b6391a095e7c93fa5e1617f25b6ba81ad4b20c9df10/immutabledict-4.3.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a8/b8/3c70881695e056f8a32f8b941126cf78775d9a4d7feba8abcb52cb7b04f2/ml_dtypes-0.5.4-cp312-cp312-macosx_10_13_universal2.whl
       - pypi: https://files.pythonhosted.org/packages/b1/8b/88f16936a8e8070a83d36239555227ecd91728f9ef222c5382cda07e0fd6/h5netcdf-1.8.1-py3-none-any.whl
@@ -1019,7 +1019,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-3.23.0-pyhcf101f3_1.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#293728c4ffb94e83ed8c272cfd536f23e87a0abd
       - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
@@ -1032,7 +1032,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/18/a6/907a406bb7d359e6a63f99c313846d9eec4f7e6f7437809e03aa00fa3074/absl_py-2.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/23/cd/066e86230ae37ed0be70aae89aabf03ca8d9f39c8aea0dec8029455b5540/opt_einsum-3.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2a/2d/d4bf65e47cea8ff2c794a600c4fd1273a7902f268757c531e0ee9f18aa58/pooch-1.9.0-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/2d/73/c14a2fec7bc1c038642f2abc6338a90a0637180506f3589e88dd098c76d2/whirlwind_insar-0.7.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/33/a0/ddb3a71359c1df61f3edc408936b5bda7ed402e78ae7e9ef6afd438577c6/jaxlib-0.9.2-cp312-cp312-manylinux_2_27_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/3a/cb/28ce52eb94390dda42599c98ea0204d74799e4d8047a0eb559b6fd648056/ml_dtypes-0.5.4-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/49/0f/6d6d722102a0ceccf4a5038e2bc91d023da84a6dba98482a4634df3d27ab/ortools-9.15.6755-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
@@ -1043,6 +1042,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/73/36/88406bd58600cc696417b8e5dd6a056478da808f3eaf48d18e2421e0c2d9/numba-0.65.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a3/ce/f9018bf69ae91b273b6391a095e7c93fa5e1617f25b6ba81ad4b20c9df10/immutabledict-4.3.1-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/ab/13/ba58309e792fe88f2ddbfc21bd657d4975a9a5490fd993d5d9a07b91e4bb/whirlwind_insar-0.10.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/b1/8b/88f16936a8e8070a83d36239555227ecd91728f9ef222c5382cda07e0fd6/h5netcdf-1.8.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ce/a9/a780cc66f86335a6019f557a8aaca8fbb970728f0efd2430d15ff1beae0e/google_crc32c-1.8.0-cp312-cp312-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/d5/1f/5f4a3cd9e4440e9d9bc78ad0a91a1c8d46b4d429d5239ebe6793c9fe5c41/fsspec-2026.3.0-py3-none-any.whl
@@ -1329,7 +1329,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hbf9d68e_6.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#293728c4ffb94e83ed8c272cfd536f23e87a0abd
       - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
@@ -1341,6 +1341,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/17/9c/e897231c880f69e32251d3b1145894d7a04e4342d9bef8d29644c440d11b/jax-0.9.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/18/a6/907a406bb7d359e6a63f99c313846d9eec4f7e6f7437809e03aa00fa3074/absl_py-2.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/1c/d4/33c8af00f0bf6f552d74f3a054f648af2c5bc6bece97972f3bfadce4f5ec/llvmlite-0.47.0-cp314-cp314-macosx_12_0_arm64.whl
+      - pypi: https://files.pythonhosted.org/packages/1f/05/280a1ebc9149049f670569f83946b280e7036ccb752f1002b34b44e5e688/whirlwind_insar-0.10.0-cp311-abi3-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/21/88/8ecf3c2b864a490b9e7010c84fd203ec8cf3b280651106a3a74dd1b0ca72/google_crc32c-1.8.0-cp314-cp314-macosx_12_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/23/cd/066e86230ae37ed0be70aae89aabf03ca8d9f39c8aea0dec8029455b5540/opt_einsum-3.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2a/2d/d4bf65e47cea8ff2c794a600c4fd1273a7902f268757c531e0ee9f18aa58/pooch-1.9.0-py3-none-any.whl
@@ -1353,7 +1354,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/72/4e/1339dc6e2557a344f5ba5590872e80346f76f6cb2ac3dd16e4666e88818c/ml_dtypes-0.5.4-cp314-cp314-macosx_10_13_universal2.whl
       - pypi: https://files.pythonhosted.org/packages/75/06/aa1e2c36db1ed893ea4a89528a9cc8617a31919ffe7307c4f56aaa87e5cc/jaxlib-0.9.2-cp314-cp314-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/a0/9a/2c3a96e7c1753fffdaa0684a1fe67b28b366075a2b39ea99f1d3eba60f54/whirlwind_insar-0.7.0-cp311-abi3-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/a1/37/260fa42e7b2b08e6e00ad632f8dd620961a60a459426c26cea390f8c68d0/numcodecs-0.16.5-cp314-cp314-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/a3/ce/f9018bf69ae91b273b6391a095e7c93fa5e1617f25b6ba81ad4b20c9df10/immutabledict-4.3.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b1/8b/88f16936a8e8070a83d36239555227ecd91728f9ef222c5382cda07e0fd6/h5netcdf-1.8.1-py3-none-any.whl
@@ -1598,7 +1598,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-3.23.0-pyhd8ed1ab_0.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#293728c4ffb94e83ed8c272cfd536f23e87a0abd
       - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
@@ -1610,7 +1610,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/18/a6/907a406bb7d359e6a63f99c313846d9eec4f7e6f7437809e03aa00fa3074/absl_py-2.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/23/cd/066e86230ae37ed0be70aae89aabf03ca8d9f39c8aea0dec8029455b5540/opt_einsum-3.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2a/2d/d4bf65e47cea8ff2c794a600c4fd1273a7902f268757c531e0ee9f18aa58/pooch-1.9.0-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/2d/73/c14a2fec7bc1c038642f2abc6338a90a0637180506f3589e88dd098c76d2/whirlwind_insar-0.7.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/3a/cb/28ce52eb94390dda42599c98ea0204d74799e4d8047a0eb559b6fd648056/ml_dtypes-0.5.4-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/44/15/bb13b4913ef95ad5448490821eee4671d0e67673342e4d4070854e5fe081/zarr-3.1.5-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/4a/f3/00bb1e867fba351e2d784170955713bee200c43ea306c59f30bd7e748192/dask-2026.3.0-py3-none-any.whl
@@ -1621,6 +1620,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/83/81/793d78c91b0546b3b1f08e55fdd97437174171cd7d70e46098f1a4d94b7b/jax-0.7.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a3/ce/f9018bf69ae91b273b6391a095e7c93fa5e1617f25b6ba81ad4b20c9df10/immutabledict-4.3.1-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/ab/13/ba58309e792fe88f2ddbfc21bd657d4975a9a5490fd993d5d9a07b91e4bb/whirlwind_insar-0.10.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/b1/8b/88f16936a8e8070a83d36239555227ecd91728f9ef222c5382cda07e0fd6/h5netcdf-1.8.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ce/a9/a780cc66f86335a6019f557a8aaca8fbb970728f0efd2430d15ff1beae0e/google_crc32c-1.8.0-cp312-cp312-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/d5/1f/5f4a3cd9e4440e9d9bc78ad0a91a1c8d46b4d429d5239ebe6793c9fe5c41/fsspec-2026.3.0-py3-none-any.whl
@@ -1850,7 +1850,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-h6491c7d_2.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#293728c4ffb94e83ed8c272cfd536f23e87a0abd
       - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
@@ -1859,6 +1859,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/14/2f/967ba146e6d58cf6a652da73885f52fc68001525b4197effc174321d70b4/jmespath-1.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/16/e1/3079a9ff9b8e11b846c6ac5c8b5bfb7ff225eee721825310c91b3b50304f/tqdm-4.67.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/18/a6/907a406bb7d359e6a63f99c313846d9eec4f7e6f7437809e03aa00fa3074/absl_py-2.4.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/1f/05/280a1ebc9149049f670569f83946b280e7036ccb752f1002b34b44e5e688/whirlwind_insar-0.10.0-cp311-abi3-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/23/cd/066e86230ae37ed0be70aae89aabf03ca8d9f39c8aea0dec8029455b5540/opt_einsum-3.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2a/2d/d4bf65e47cea8ff2c794a600c4fd1273a7902f268757c531e0ee9f18aa58/pooch-1.9.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/31/ad/964ee5341767dd9e2f13e76f0a36d45aa8d81ad776c80bdd6dedc8f2f462/ortools-9.14.6206-cp312-cp312-macosx_11_0_arm64.whl
@@ -1870,7 +1871,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/71/e7/40fb618334dcdf7c5a316c0e7343c5cd82d3d866edc100d98e29bc945ecd/partd-1.4.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/83/81/793d78c91b0546b3b1f08e55fdd97437174171cd7d70e46098f1a4d94b7b/jax-0.7.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/a0/9a/2c3a96e7c1753fffdaa0684a1fe67b28b366075a2b39ea99f1d3eba60f54/whirlwind_insar-0.7.0-cp311-abi3-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/a3/ce/f9018bf69ae91b273b6391a095e7c93fa5e1617f25b6ba81ad4b20c9df10/immutabledict-4.3.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a8/b8/3c70881695e056f8a32f8b941126cf78775d9a4d7feba8abcb52cb7b04f2/ml_dtypes-0.5.4-cp312-cp312-macosx_10_13_universal2.whl
       - pypi: https://files.pythonhosted.org/packages/b1/8b/88f16936a8e8070a83d36239555227ecd91728f9ef222c5382cda07e0fd6/h5netcdf-1.8.1-py3-none-any.whl
@@ -2196,7 +2196,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-3.23.0-pyhd8ed1ab_0.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#293728c4ffb94e83ed8c272cfd536f23e87a0abd
       - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
@@ -2208,7 +2208,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/18/a6/907a406bb7d359e6a63f99c313846d9eec4f7e6f7437809e03aa00fa3074/absl_py-2.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/23/cd/066e86230ae37ed0be70aae89aabf03ca8d9f39c8aea0dec8029455b5540/opt_einsum-3.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2a/2d/d4bf65e47cea8ff2c794a600c4fd1273a7902f268757c531e0ee9f18aa58/pooch-1.9.0-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/2d/73/c14a2fec7bc1c038642f2abc6338a90a0637180506f3589e88dd098c76d2/whirlwind_insar-0.7.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/3a/cb/28ce52eb94390dda42599c98ea0204d74799e4d8047a0eb559b6fd648056/ml_dtypes-0.5.4-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/44/15/bb13b4913ef95ad5448490821eee4671d0e67673342e4d4070854e5fe081/zarr-3.1.5-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/4a/f3/00bb1e867fba351e2d784170955713bee200c43ea306c59f30bd7e748192/dask-2026.3.0-py3-none-any.whl
@@ -2219,6 +2218,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/83/81/793d78c91b0546b3b1f08e55fdd97437174171cd7d70e46098f1a4d94b7b/jax-0.7.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a3/ce/f9018bf69ae91b273b6391a095e7c93fa5e1617f25b6ba81ad4b20c9df10/immutabledict-4.3.1-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/ab/13/ba58309e792fe88f2ddbfc21bd657d4975a9a5490fd993d5d9a07b91e4bb/whirlwind_insar-0.10.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/b1/8b/88f16936a8e8070a83d36239555227ecd91728f9ef222c5382cda07e0fd6/h5netcdf-1.8.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ce/a9/a780cc66f86335a6019f557a8aaca8fbb970728f0efd2430d15ff1beae0e/google_crc32c-1.8.0-cp312-cp312-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/d5/1f/5f4a3cd9e4440e9d9bc78ad0a91a1c8d46b4d429d5239ebe6793c9fe5c41/fsspec-2026.3.0-py3-none-any.whl
@@ -2471,7 +2471,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-h6491c7d_2.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#293728c4ffb94e83ed8c272cfd536f23e87a0abd
       - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
@@ -2480,6 +2480,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/14/2f/967ba146e6d58cf6a652da73885f52fc68001525b4197effc174321d70b4/jmespath-1.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/16/e1/3079a9ff9b8e11b846c6ac5c8b5bfb7ff225eee721825310c91b3b50304f/tqdm-4.67.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/18/a6/907a406bb7d359e6a63f99c313846d9eec4f7e6f7437809e03aa00fa3074/absl_py-2.4.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/1f/05/280a1ebc9149049f670569f83946b280e7036ccb752f1002b34b44e5e688/whirlwind_insar-0.10.0-cp311-abi3-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/23/cd/066e86230ae37ed0be70aae89aabf03ca8d9f39c8aea0dec8029455b5540/opt_einsum-3.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2a/2d/d4bf65e47cea8ff2c794a600c4fd1273a7902f268757c531e0ee9f18aa58/pooch-1.9.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/31/ad/964ee5341767dd9e2f13e76f0a36d45aa8d81ad776c80bdd6dedc8f2f462/ortools-9.14.6206-cp312-cp312-macosx_11_0_arm64.whl
@@ -2491,7 +2492,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/71/e7/40fb618334dcdf7c5a316c0e7343c5cd82d3d866edc100d98e29bc945ecd/partd-1.4.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/83/81/793d78c91b0546b3b1f08e55fdd97437174171cd7d70e46098f1a4d94b7b/jax-0.7.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/a0/9a/2c3a96e7c1753fffdaa0684a1fe67b28b366075a2b39ea99f1d3eba60f54/whirlwind_insar-0.7.0-cp311-abi3-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/a3/ce/f9018bf69ae91b273b6391a095e7c93fa5e1617f25b6ba81ad4b20c9df10/immutabledict-4.3.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a8/b8/3c70881695e056f8a32f8b941126cf78775d9a4d7feba8abcb52cb7b04f2/ml_dtypes-0.5.4-cp312-cp312-macosx_10_13_universal2.whl
       - pypi: https://files.pythonhosted.org/packages/b1/8b/88f16936a8e8070a83d36239555227ecd91728f9ef222c5382cda07e0fd6/h5netcdf-1.8.1-py3-none-any.whl
@@ -2842,7 +2842,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-3.23.0-pyhd8ed1ab_0.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#293728c4ffb94e83ed8c272cfd536f23e87a0abd
       - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
@@ -2854,7 +2854,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/18/a6/907a406bb7d359e6a63f99c313846d9eec4f7e6f7437809e03aa00fa3074/absl_py-2.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/23/cd/066e86230ae37ed0be70aae89aabf03ca8d9f39c8aea0dec8029455b5540/opt_einsum-3.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2a/2d/d4bf65e47cea8ff2c794a600c4fd1273a7902f268757c531e0ee9f18aa58/pooch-1.9.0-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/2d/73/c14a2fec7bc1c038642f2abc6338a90a0637180506f3589e88dd098c76d2/whirlwind_insar-0.7.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/3a/cb/28ce52eb94390dda42599c98ea0204d74799e4d8047a0eb559b6fd648056/ml_dtypes-0.5.4-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/44/15/bb13b4913ef95ad5448490821eee4671d0e67673342e4d4070854e5fe081/zarr-3.1.5-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/4a/f3/00bb1e867fba351e2d784170955713bee200c43ea306c59f30bd7e748192/dask-2026.3.0-py3-none-any.whl
@@ -2865,6 +2864,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/83/81/793d78c91b0546b3b1f08e55fdd97437174171cd7d70e46098f1a4d94b7b/jax-0.7.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a3/ce/f9018bf69ae91b273b6391a095e7c93fa5e1617f25b6ba81ad4b20c9df10/immutabledict-4.3.1-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/ab/13/ba58309e792fe88f2ddbfc21bd657d4975a9a5490fd993d5d9a07b91e4bb/whirlwind_insar-0.10.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/b1/8b/88f16936a8e8070a83d36239555227ecd91728f9ef222c5382cda07e0fd6/h5netcdf-1.8.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ce/a9/a780cc66f86335a6019f557a8aaca8fbb970728f0efd2430d15ff1beae0e/google_crc32c-1.8.0-cp312-cp312-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/d5/1f/5f4a3cd9e4440e9d9bc78ad0a91a1c8d46b4d429d5239ebe6793c9fe5c41/fsspec-2026.3.0-py3-none-any.whl
@@ -3142,7 +3142,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-h6491c7d_2.conda
       - pypi: .
       - pypi: git+https://github.com/scottstanie/COMPASS.git?branch=develop-scott#18297ff1158720b44280b87a7c3ce9cd17d75a38
-      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+      - pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#293728c4ffb94e83ed8c272cfd536f23e87a0abd
       - pypi: git+https://github.com/scottstanie/opera-utils.git?branch=develop-scott#f698333b09099c04db18e48f7b717e88987d1d11
       - pypi: git+https://github.com/scottstanie/s1-reader.git?branch=develop-scott#b3fb4a9d7624363d7e36021bc3e177d10ba6ed92
       - pypi: git+https://github.com/scottstanie/spurt.git?branch=develop-scott#5adae527a49657a78d470868a6fb3999559f943c
@@ -3151,6 +3151,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/14/2f/967ba146e6d58cf6a652da73885f52fc68001525b4197effc174321d70b4/jmespath-1.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/16/e1/3079a9ff9b8e11b846c6ac5c8b5bfb7ff225eee721825310c91b3b50304f/tqdm-4.67.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/18/a6/907a406bb7d359e6a63f99c313846d9eec4f7e6f7437809e03aa00fa3074/absl_py-2.4.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/1f/05/280a1ebc9149049f670569f83946b280e7036ccb752f1002b34b44e5e688/whirlwind_insar-0.10.0-cp311-abi3-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/23/cd/066e86230ae37ed0be70aae89aabf03ca8d9f39c8aea0dec8029455b5540/opt_einsum-3.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2a/2d/d4bf65e47cea8ff2c794a600c4fd1273a7902f268757c531e0ee9f18aa58/pooch-1.9.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/31/ad/964ee5341767dd9e2f13e76f0a36d45aa8d81ad776c80bdd6dedc8f2f462/ortools-9.14.6206-cp312-cp312-macosx_11_0_arm64.whl
@@ -3162,7 +3163,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/71/e7/40fb618334dcdf7c5a316c0e7343c5cd82d3d866edc100d98e29bc945ecd/partd-1.4.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/83/81/793d78c91b0546b3b1f08e55fdd97437174171cd7d70e46098f1a4d94b7b/jax-0.7.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/a0/9a/2c3a96e7c1753fffdaa0684a1fe67b28b366075a2b39ea99f1d3eba60f54/whirlwind_insar-0.7.0-cp311-abi3-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/a3/ce/f9018bf69ae91b273b6391a095e7c93fa5e1617f25b6ba81ad4b20c9df10/immutabledict-4.3.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a8/b8/3c70881695e056f8a32f8b941126cf78775d9a4d7feba8abcb52cb7b04f2/ml_dtypes-0.5.4-cp312-cp312-macosx_10_13_universal2.whl
       - pypi: https://files.pythonhosted.org/packages/b1/8b/88f16936a8e8070a83d36239555227ecd91728f9ef222c5382cda07e0fd6/h5netcdf-1.8.1-py3-none-any.whl
@@ -15274,7 +15274,7 @@ packages:
   - sentineleof
   - shapely
   - tyro
-  - whirlwind-insar
+  - whirlwind-insar>=0.10
   - fastapi>=0.100 ; extra == 'web'
   - uvicorn[standard] ; extra == 'web'
   - sqlmodel ; extra == 'web'
@@ -15294,9 +15294,9 @@ packages:
   - mkdocstrings[python] ; extra == 'docs'
   - pymdown-extensions ; extra == 'docs'
   requires_python: '>=3.8'
-- pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#d663c79c55b746661e5b090bdca0846bf26cb9ec
+- pypi: git+https://github.com/scottstanie/dolphin.git?branch=develop-scott#293728c4ffb94e83ed8c272cfd536f23e87a0abd
   name: dolphin
-  version: 0.26.0.post1.dev368+gd663c79c5
+  version: 0.26.0.post1.dev372+g293728c4f
   requires_dist:
   - h5py>=3.6
   - jax>=0.4.19
@@ -15533,6 +15533,13 @@ packages:
   version: 0.47.0
   sha256: de966c626c35c9dff5ae7bf12db25637738d0df83fc370cf793bc94d43d92d14
   requires_python: '>=3.10'
+- pypi: https://files.pythonhosted.org/packages/1f/05/280a1ebc9149049f670569f83946b280e7036ccb752f1002b34b44e5e688/whirlwind_insar-0.10.0-cp311-abi3-macosx_11_0_arm64.whl
+  name: whirlwind-insar
+  version: 0.10.0
+  sha256: eefae6d94cc84a7b80b9546f6b5e7522ef97df9f15abbce885a11b12b489748a
+  requires_dist:
+  - numpy>=1.21
+  requires_python: '>=3.11'
 - pypi: https://files.pythonhosted.org/packages/21/88/8ecf3c2b864a490b9e7010c84fd203ec8cf3b280651106a3a74dd1b0ca72/google_crc32c-1.8.0-cp314-cp314-macosx_12_0_arm64.whl
   name: google-crc32c
   version: 1.8.0
@@ -15557,13 +15564,6 @@ packages:
   - pytest-httpserver ; extra == 'test'
   - pytest-localftpserver ; extra == 'test'
   requires_python: '>=3.9'
-- pypi: https://files.pythonhosted.org/packages/2d/73/c14a2fec7bc1c038642f2abc6338a90a0637180506f3589e88dd098c76d2/whirlwind_insar-0.7.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-  name: whirlwind-insar
-  version: 0.7.0
-  sha256: 02b058b3e45eda86a0b15cc4f7dd272556f3b9ce132da7da837d724eb02fc5d3
-  requires_dist:
-  - numpy>=1.21
-  requires_python: '>=3.11'
 - pypi: https://files.pythonhosted.org/packages/31/ad/964ee5341767dd9e2f13e76f0a36d45aa8d81ad776c80bdd6dedc8f2f462/ortools-9.14.6206-cp312-cp312-macosx_11_0_arm64.whl
   name: ortools
   version: 9.14.6206
@@ -15835,13 +15835,6 @@ packages:
   version: 3.1.2
   sha256: 9acb47f6afd73f60dc1df93bb801b472f05ff42fa6c84167d25cb206be1fbf4a
   requires_python: '>=3.8'
-- pypi: https://files.pythonhosted.org/packages/a0/9a/2c3a96e7c1753fffdaa0684a1fe67b28b366075a2b39ea99f1d3eba60f54/whirlwind_insar-0.7.0-cp311-abi3-macosx_11_0_arm64.whl
-  name: whirlwind-insar
-  version: 0.7.0
-  sha256: 381a548eea5e7846b3de2747b1e72f8baf333763032c0f146fa7c558154d09ca
-  requires_dist:
-  - numpy>=1.21
-  requires_python: '>=3.11'
 - pypi: https://files.pythonhosted.org/packages/a1/37/260fa42e7b2b08e6e00ad632f8dd620961a60a459426c26cea390f8c68d0/numcodecs-0.16.5-cp314-cp314-macosx_11_0_arm64.whl
   name: numcodecs
   version: 0.16.5
@@ -15886,6 +15879,13 @@ packages:
   - pylint>=2.6.0 ; extra == 'dev'
   - pyink ; extra == 'dev'
   requires_python: '>=3.9'
+- pypi: https://files.pythonhosted.org/packages/ab/13/ba58309e792fe88f2ddbfc21bd657d4975a9a5490fd993d5d9a07b91e4bb/whirlwind_insar-0.10.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+  name: whirlwind-insar
+  version: 0.10.0
+  sha256: 897452e4b0e1070ba5c3b6f44e1861ac4c201045befb2e56a6cf9a82d8b770b2
+  requires_dist:
+  - numpy>=1.21
+  requires_python: '>=3.11'
 - pypi: https://files.pythonhosted.org/packages/b1/8b/88f16936a8e8070a83d36239555227ecd91728f9ef222c5382cda07e0fd6/h5netcdf-1.8.1-py3-none-any.whl
   name: h5netcdf
   version: 1.8.1

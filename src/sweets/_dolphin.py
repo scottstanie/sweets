@@ -96,7 +96,7 @@ class DolphinOptions(BaseModel):
         description="Save N nearest-neighbor multilooked coherence rasters.",
     )
     unwrap_method: UnwrapMethod = Field(
-        default="snaphu",
+        default="whirlwind",
         description="Unwrapping algorithm to invoke through dolphin.",
     )
     n_parallel_unwrap: int = Field(
@@ -120,6 +120,46 @@ class DolphinOptions(BaseModel):
     snaphu_cost: Literal["defo", "smooth"] = Field(
         default="smooth",
         description="SNAPHU statistical cost mode.",
+    )
+    whirlwind_num_threads: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Threads for whirlwind's internal rayon pool, shared across the"
+            " `n_parallel_unwrap` concurrent jobs. `None` defers to"
+            " `WHIRLWIND_NUM_THREADS` / `RAYON_NUM_THREADS`, falling back to"
+            " all CPUs."
+        ),
+    )
+    whirlwind_interpolate: bool = Field(
+        default=False,
+        description=(
+            "Run whirlwind's persistent-scatterer interpolation pre-pass, which"
+            " fills pixels below `whirlwind_interp_cutoff` from nearby"
+            " high-coherence phasors before the solve. Only the integer cycle"
+            " field is transferred back, so per-pixel phase is preserved."
+        ),
+    )
+    whirlwind_interp_cutoff: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Coherence below which a pixel is interpolated.",
+    )
+    whirlwind_goldstein_alpha: float = Field(
+        default=0.0,
+        ge=0.0,
+        description=(
+            "Strength of whirlwind's internal Goldstein pre-filter; 0 disables"
+            " it. The filter only informs the minimum-cost-flow solve."
+        ),
+    )
+    whirlwind_bridge: bool = Field(
+        default=True,
+        description=(
+            "Bridge disjoint connected components across low-coherence gaps so"
+            " they share a consistent integer cycle."
+        ),
     )
     run_timeseries: bool = Field(
         default=True,
@@ -209,6 +249,14 @@ def build_displacement_config(
             "tile_overlap": list(options.snaphu_tile_overlap),
             "cost": options.snaphu_cost,
             "single_tile_reoptimize": True,  # always better
+        }
+    elif options.unwrap_method == "whirlwind":
+        unwrap_options["whirlwind_options"] = {
+            "num_threads": options.whirlwind_num_threads,
+            "interpolate": options.whirlwind_interpolate,
+            "interp_cutoff": options.whirlwind_interp_cutoff,
+            "goldstein_alpha": options.whirlwind_goldstein_alpha,
+            "bridge": options.whirlwind_bridge,
         }
 
     output_options: dict = {

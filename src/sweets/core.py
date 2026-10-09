@@ -125,8 +125,12 @@ class Workflow(YamlModel):
         ),
     )
     orbit_dir: Path = Field(
-        default=Path("orbits"),
-        description="Directory for Sentinel-1 precise orbit files.",
+        default_factory=lambda data: data["work_dir"] / "orbits",
+        description=(
+            "Directory for Sentinel-1 precise orbit files. Defaults to"
+            " `work_dir/orbits`; a relative path given here is resolved"
+            " against the current working directory."
+        ),
         validate_default=True,
     )
 

@@ -1,5 +1,17 @@
 # Unreleased
 
+**Major changes**
+- **`whirlwind` is the default unwrapper.** `dolphin.unwrap_method` now
+  defaults to `whirlwind`, which emits unwrapped phase and SNAPHU-style
+  connected components from a single minimum-cost-flow solve. `snaphu` and
+  `spurt` remain available. New `dolphin.whirlwind_*` knobs cover the
+  tunables sweets users reach for: `whirlwind_num_threads`,
+  `whirlwind_interpolate` / `whirlwind_interp_cutoff` (persistent-scatterer
+  interpolation pre-pass), `whirlwind_goldstein_alpha`, and
+  `whirlwind_bridge`. Adds a `whirlwind-insar` runtime dependency, and moves
+  the pinned `dolphin` / `opera-utils` revisions forward to the versions that
+  carry `WhirlwindOptions`.
+
 **New features**
 - **Optionally skip water masking.** A new `water_mask_enabled` config field
   (default `True`) lets you bypass water masking entirely. When set to `False`,
@@ -8,6 +20,12 @@
   `sweets config --no-water-mask-enabled ...`. Useful where water masking causes
   more unwrapping errors than it prevents (noisy rivers / coastlines) or where
   masking is unnecessary. Closes #156.
+
+**Fixes**
+- `Workflow.orbit_dir` now defaults to `work_dir/orbits` instead of resolving
+  `orbits` against the process CWD. In containers where CWD is `/`, the old
+  default produced a non-writable `/orbits` and COMPASS failed with
+  `PermissionError`. Explicit `orbit_dir` values are unaffected. Fixes #151.
 
 # [0.3.0](https://github.com/opera-adt/sweets/compare/v0.2.0...v0.3.0) - 2026-04-12
 

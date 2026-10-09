@@ -93,6 +93,26 @@ class TestWorkflow:
         assert w.dem_filename == w.work_dir / "dem.tif"
         assert w.water_mask_filename == w.work_dir / "watermask.tif"
         assert w.log_dir == w.work_dir / "logs"
+        assert w.orbit_dir == w.work_dir / "orbits"
+
+    def test_orbit_dir_ignores_cwd(self, tmp_path, bbox, search_kwargs, monkeypatch):
+        """Regression for #151: a read-only CWD must not yield `/orbits`."""
+        work_dir = tmp_path / "insar" / "event"
+        outside = tmp_path / "elsewhere"
+        outside.mkdir(parents=True)
+        monkeypatch.chdir(outside)
+
+        w = Workflow(work_dir=work_dir, bbox=bbox, search=search_kwargs)
+        assert w.orbit_dir == work_dir / "orbits"
+
+        # An explicit path still wins.
+        w = Workflow(
+            work_dir=work_dir,
+            bbox=bbox,
+            search=search_kwargs,
+            orbit_dir=tmp_path / "shared-orbits",
+        )
+        assert w.orbit_dir == tmp_path / "shared-orbits"
 
     def test_water_mask_enabled_default_and_roundtrip(
         self, tmp_path, bbox, search_kwargs

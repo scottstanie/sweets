@@ -229,7 +229,7 @@ class TestExecuteRoundTrip:
         assert reloaded.search.track == 78
 
     def test_default_paths_computed_from_work_dir(self, safe_kwargs, tmp_path):
-        """dem_filename / water_mask_filename default to <work_dir>/*.tif."""
+        """dem_filename / water_mask_filename / orbit_dir default to <work_dir>/*."""
         output = tmp_path / "config.yaml"
         cfg = ConfigCli(**safe_kwargs, output=output, with_schema=False)
         cfg.execute()
@@ -237,15 +237,18 @@ class TestExecuteRoundTrip:
         reloaded = Workflow.from_yaml(output)
         assert reloaded.dem_filename == tmp_path / "dem.tif"
         assert reloaded.water_mask_filename == tmp_path / "watermask.tif"
+        assert reloaded.orbit_dir == tmp_path / "orbits"
 
     def test_user_path_overrides_preserved(self, safe_kwargs, tmp_path):
         output = tmp_path / "config.yaml"
         my_dem = tmp_path / "my_dem.tif"
         my_mask = tmp_path / "my_mask.tif"
+        my_orbits = tmp_path / "shared_orbits"
         cfg = ConfigCli(
             **safe_kwargs,
             dem_filename=my_dem,
             water_mask_filename=my_mask,
+            orbit_dir=my_orbits,
             output=output,
             with_schema=False,
         )
@@ -254,6 +257,7 @@ class TestExecuteRoundTrip:
         reloaded = Workflow.from_yaml(output)
         assert reloaded.dem_filename == my_dem
         assert reloaded.water_mask_filename == my_mask
+        assert reloaded.orbit_dir == my_orbits
 
     def test_flat_cli_fields_not_serialized(self, safe_kwargs, tmp_path):
         """Flat source flags and CLI-only knobs must not appear in the YAML.

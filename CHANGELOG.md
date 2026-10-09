@@ -13,6 +13,14 @@
   carry `WhirlwindOptions`.
 
 **New features**
+- **`LocalSafeSearch` date filtering.** Optional `start` / `end` select a
+  sub-range of a pre-downloaded SAFE directory (wired to the `--start` /
+  `--end` CLI flags), and only the selected SAFEs are staged for geocoding.
+- **Drop known-degraded Sentinel-1 dates.** Acquisitions on dates with known
+  bad data are removed before processing, including from already-downloaded
+  stacks.
+- **Optional inter-burst phase alignment.** `dolphin.run_burst_align` removes
+  per-burst phase offsets before stitching.
 - **Optionally skip water masking.** A new `water_mask_enabled` config field
   (default `True`) lets you bypass water masking entirely. When set to `False`,
   sweets skips building `water_mask_filename` in step 1 and passes no mask to
@@ -22,6 +30,11 @@
   masking is unnecessary. Closes #156.
 
 **Fixes**
+- Sentinel-1C and 1D SAFEs are now found by `BurstSearch` and
+  `LocalSafeSearch`; the old `S1[AB]_*` globs skipped them, so S1C/S1D
+  downloads ended with "no SAFE directories found". Fixes #158.
+- burst2safe downloads retry more and de-duplicate, and a partially finished
+  download is resumed instead of being treated as a complete stack.
 - `Workflow.orbit_dir` now defaults to `work_dir/orbits` instead of resolving
   `orbits` against the process CWD. In containers where CWD is `/`, the old
   default produced a non-writable `/orbits` and COMPASS failed with
